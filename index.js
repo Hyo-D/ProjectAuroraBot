@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, AttachmentBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const fs = require('fs'); // Para leer archivos y ver su peso
 const path = require('path'); // Para manejar las rutas de los archivos
 const axios = require('axios'); // Para subir a Litterbox
@@ -20,6 +20,79 @@ const client = new Client({
 // Cuando el bot encienda, nos avisará en la terminal
 client.once('clientReady', () => {
     console.log(`🚂 ¡Project Aurora encendido e iniciado sesión como ${client.user.tag}!`);
+});
+
+client.on('interactionCreate', async interaction => {
+    // Si la interacción no es un slash command, la ignoramos
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'aurora') {
+        // 1. Calculamos el tiempo activo (Uptime)
+        const totalSeconds = interaction.client.uptime / 1000;
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const uptime = `${days}d ${hours}h ${minutes}m`;
+
+        // 2. Extraemos la cantidad de servidores
+        const serverCount = interaction.client.guilds.cache.size.toString();
+
+        // 3. Formateamos la fecha de creación (Usamos el formato nativo de Discord)
+        const creationTimestamp = Math.floor(interaction.client.user.createdTimestamp / 1000);
+        const creationDate = `<t:${creationTimestamp}:D>`; // Se mostrará traducido al idioma del usuario
+
+        // 4. Construimos el Embed con tus campos exactos
+        const infoEmbed = new EmbedBuilder()
+            .setColor('#2F3136') 
+            .setThumbnail(interaction.client.user.displayAvatarURL())
+            .addFields(
+                { name: '🤖 Nombre del Bot', value: interaction.client.user.username, inline: true },
+                { name: '👑 Dev', value: 'Hyo', inline: true },
+                { name: '⏱️ Tiempo Activo', value: uptime, inline: true },
+                { name: '📅 Fecha de Creación', value: creationDate, inline: true },
+                { name: '🌍 Cantidad de Servidores', value: serverCount, inline: true }
+            )
+            .setFooter({ 
+                text: `Solicitado por ${interaction.user.username}`, 
+                iconURL: interaction.user.displayAvatarURL() 
+            });
+
+        // 5. Enviamos la respuesta
+        await interaction.reply({ embeds: [infoEmbed] });
+    }
+});
+
+client.on('interactionCreate', async interaction => {
+    // Si la interacción no es un slash command, la ignoramos
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'aurora') {
+        const days = Math.floor(interaction.client.uptime / 86400000);
+        const hours = Math.floor(interaction.client.uptime / 3600000) % 24;
+        const minutes = Math.floor(interaction.client.uptime / 60000) % 60;
+        const uptime = `${days}d ${hours}h ${minutes}m`;
+
+        const infoEmbed = new EmbedBuilder()
+            .setTitle('✨ Project Aurora | Sistema en Línea')
+            .setColor('#2F3136') 
+            .setThumbnail(interaction.client.user.displayAvatarURL())
+            .setDescription('Asistente multipropósito especializado en extracción multimedia nativa y utilidades de servidor.')
+            .addFields(
+                { name: '📊 Estado del Servidor', value: `📡 Ping: \`${interaction.client.ws.ping}ms\`\n⏱️ Tiempo activo: \`${uptime}\`\n📚 discord.js: \`v${version}\``, inline: false },
+                { name: '👑 Dev', value: 'Hyo', inline: true },
+                { name: '📍 Base de Operaciones', value: 'Navojoa, Sonora', inline: true },
+                { name: '\u200B', value: '\u200B', inline: true }, 
+                { name: '⚙️ Hardware de Pruebas', value: '`Ryzen 7 5700X3D` | `RTX 5070 Ti`', inline: true },
+                { name: '🛠️ Stack Principal', value: '`Node.js` `Java` `Unity` `Arduino`', inline: true },
+                )
+            .setFooter({ 
+                text: `Solicitado por ${interaction.user.username}`, 
+                iconURL: interaction.user.displayAvatarURL() 
+            })
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [infoEmbed] });
+    }
 });
 
 // Escuchar cada mensaje que se envía
