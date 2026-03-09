@@ -2,9 +2,11 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, AttachmentBuilder } = require('discord.js');
 const fs = require('fs'); // Para leer archivos y ver su peso
 const path = require('path'); // Para manejar las rutas de los archivos
-const youtubedl = require('youtube-dl-exec'); // El extractor pesado
 const axios = require('axios'); // Para subir a Litterbox
 const FormData = require('form-data'); // Para empaquetar el archivo al subirlo
+const { exec } = require('child_process');
+const { create } = require('youtube-dl-exec');
+const youtubedl = create('/usr/local/bin/yt-dlp'); // Asegúrate de que yt-dlp esté instalado y en esta ruta
 
 // Configurar los permisos del bot
 const client = new Client({
@@ -95,8 +97,9 @@ client.on('messageCreate', async message => {
 
         try {
             await youtubedl(fbLink, {
-                output: `"${filePath}"`, 
+                output: filePath, 
                 format: 'w', 
+            
             });
 
             const stats = fs.statSync(filePath);
@@ -105,7 +108,7 @@ client.on('messageCreate', async message => {
             if (fileSizeInMB <= 8) {
                 const attachment = new AttachmentBuilder(filePath);
                 await processingMsg.edit({ 
-                    content: `Extraído por **${message.author.username}**:`, 
+                    content: ` `, 
                     files: [attachment] 
                 });
                 await message.suppressEmbeds(true);
@@ -126,7 +129,7 @@ client.on('messageCreate', async message => {
                 });
 
                 const litterboxUrl = response.data;
-                await processingMsg.edit(`Archivo pesado extraído por **${message.author.username}**:\n${litterboxUrl}`);
+                await processingMsg.edit(`Archivo pesado extraído:\n${litterboxUrl}`);
                 await message.suppressEmbeds(true);
             }
 
@@ -138,6 +141,109 @@ client.on('messageCreate', async message => {
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
     }
+
+   // --- MÓDULO DE EXTRACCIÓN: PINTEREST ---
+    const pinRegex = /https?:\/\/(?:www\.)?(?:pinterest\.[a-z]+\/pin\/|pin\.it\/)[^\s]+/gi;
+    const pinMatches = content.match(pinRegex);
+
+    if (pinMatches) {
+        const pinLink = pinMatches[0].split('?')[0]; 
+        const processingMsg = await message.reply("Extrayendo Pin...");
+        
+        // 1. Creamos un nombre base ÚNICO, sin extensión
+        const baseName = `aurora_pin_${Date.now()}`;
+        // 2. Le decimos a yt-dlp que use el nombre base y le ponga la extensión real del archivo
+        const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
+        
+        let actualFilePath = null; // Variable para guardar la ruta real y poder borrarla al final
+
+        try {
+            // 3. Descargamos totalmente libres, sin formato
+            await youtubedl(pinLink, {
+                output: outputTemplate,
+                
+                mergeOutputFormat: 'mp4',
+                noWarnings: true
+            });
+
+            // 4. EL TRUCO: Escaneamos la carpeta actual buscando el archivo que acabamos de crear
+            const files = fs.readdirSync(__dirname);
+            const downloadedFileName = files.find(file => file.startsWith(baseName));
+
+            if (!downloadedFileName) throw new Error("Archivo no generado");
+
+            // 5. ¡Lo atrapamos! Armamos la ruta real
+            actualFilePath = path.join(__dirname, downloadedFileName);
+            
+            const stats = fs.statSync(actualFilePath);
+            const fileSizeInMB = stats.size / (1024 * 1024);
+
+            if (fileSizeInMB <= 8) {
+                const attachment = new AttachmentBuilder(actualFilePath);
+                await processingMsg.edit({ 
+                    content: `📌`, 
+                    files: [attachment] 
+                });
+                await message.suppressEmbeds(true);
+            } else {
+                await processingMsg.edit("Pin pesado. Subiendo a servidor temporal...");
+                
+                const form = new FormData();
+                form.append('reqtype', 'fileupload');
+                form.append('time', '24h');
+                form.append('fileToUpload', fs.createReadStream(actualFilePath));
+
+                const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
+                    headers: form.getHeaders(),
+                    maxBodyLength: Infinity,
+                    maxContentLength: Infinity
+                });
+
+                const litterboxUrl = response.data;
+                await processingMsg.edit(`📌 Pin extraído (Expira en 24h):\n${litterboxUrl}`);
+                await message.suppressEmbeds(true);
+            }
+
+        } catch (error) {
+            // EL PLAN B: Rescate de imágenes estáticas
+            console.log("yt-dlp falló (probablemente sea imagen).");
+            try {
+                // 1. Nos disfrazamos de navegador real para engañar a Pinterest
+                const pageResponse = await axios.get(pinLink, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                    }
+                });
+                
+                // 2. FUERZA BRUTA: Buscamos cualquier enlace directo a imágenes de Pinterest en alta calidad (originals o 736x)
+                const imageRegex = /https:\/\/i\.pinimg\.com\/(?:originals|736x|564x)\/[a-f0-9]+\/[a-f0-9]+\/[a-f0-9]+\/[a-f0-9a-f]+\.(?:jpg|png|webp)/i;
+                const imageMatch = pageResponse.data.match(imageRegex);
+                
+                if (imageMatch && imageMatch[0]) {
+                    const imageUrl = imageMatch[0];
+                    console.log("¡Imagen encontrada en el código fuente! ->", imageUrl);
+                    
+                    await processingMsg.edit({ 
+                        content: `📌`, 
+                        files: [imageUrl] 
+                    });
+                    await message.suppressEmbeds(true);
+                } else {
+                    console.log("❌ Axios descargó la página, pero no encontró enlaces de imágenes válidos.");
+                    await processingMsg.delete().catch(() => {});
+                }
+            } catch (fallbackError) {
+                console.error("❌ Fallo total en la conexión de Axios:", fallbackError.message);
+                await processingMsg.delete().catch(() => {});
+            }
+        } finally {
+            if (actualFilePath && fs.existsSync(actualFilePath)) {
+                fs.unlinkSync(actualFilePath);
+            }
+        }
+    }
+
     });
 
 // Iniciar sesión con el token oculto
