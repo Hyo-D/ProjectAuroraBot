@@ -111,7 +111,7 @@ client.on('messageCreate', async message => {
     if (socialMatches) {
         // Para no saturar el bot, procesamos solo el primer enlace que encuentre en el mensaje
         const link = socialMatches[0];
-        const processingMsg = await message.reply("Analizando metadatos y extrayendo contenido...");
+        const processingMsg = await message.reply("Espere...");
         let actualFilePath = null;
 
         try {
@@ -144,77 +144,94 @@ client.on('messageCreate', async message => {
             const socialEmbed = new EmbedBuilder()
                 .setColor(embedColor)
                 .setAuthor({ name: `👤 ${authorName} en ${platformName}` })
-                .setDescription(`> ${postText.substring(0, 4000)}`) // Evitamos crashear si el texto es excesivamente largo
+                .setDescription(`> ${postText.substring(0, 4000)}`) 
                 .setFooter({ text: 'Project Aurora ✨' });
 
+            // Si hay una imagen en miniatura en los metadatos, se la pre-cargamos al Embed por si acaso
+            if (metadata.thumbnail) {
+                socialEmbed.setImage(metadata.thumbnail);
+            }
+
             // 5. ¡A descargar el archivo real!
-            await processingMsg.edit("Descargando multimedia original...");
+            
 
             const baseName = `aurora_social_${Date.now()}`;
             const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
 
-            await youtubedl(link, {
-                output: outputTemplate,
-                noWarnings: true
-            });
+            let fileDownloaded = false;
 
-            // 6. Buscamos el archivo en la carpeta (Igual que con Pinterest)
-            const files = fs.readdirSync(__dirname);
-            const downloadedFileName = files.find(file => file.startsWith(baseName));
-
-            if (!downloadedFileName) throw new Error("Archivo no generado por el motor.");
-
-            actualFilePath = path.join(__dirname, downloadedFileName);
-            const stats = fs.statSync(actualFilePath);
-            const fileSizeInMB = stats.size / (1024 * 1024);
-
-            // 7. Enviamos el "Combo" (Embed + Archivo) a Discord
-            if (fileSizeInMB <= 8) {
-                const attachment = new AttachmentBuilder(actualFilePath);
-                await processingMsg.edit({
-                    content: ` `,
-                    embeds: [socialEmbed],
-                    files: [attachment]
+            // INTENTO AISLADO: Si falla la descarga, no matamos el proceso entero
+            try {
+                await youtubedl(link, {
+                    output: outputTemplate,
+                    noWarnings: true
                 });
-                await message.suppressEmbeds(true);
+
+                const files = fs.readdirSync(__dirname);
+                const downloadedFileName = files.find(file => file.startsWith(baseName));
+
+                if (downloadedFileName) {
+                    actualFilePath = path.join(__dirname, downloadedFileName);
+                    fileDownloaded = true;
+                }
+            } catch (downloadError) {
+                console.log(`[Universal] No hay video para descargar en ${link}. Usando Modo Texto/Imagen.`);
+            }
+
+            // 6. Evaluamos qué enviar (Combo completo vs Solo Embed)
+            if (fileDownloaded) {
+                const stats = fs.statSync(actualFilePath);
+                const fileSizeInMB = stats.size / (1024 * 1024);
+
+                if (fileSizeInMB <= 8) {
+                    const attachment = new AttachmentBuilder(actualFilePath);
+                    await processingMsg.edit({
+                        content: ` `,
+                        embeds: [socialEmbed],
+                        files: [attachment]
+                    });
+                } else {
+                    
+                    const form = new FormData();
+                    form.append('reqtype', 'fileupload');
+                    form.append('time', '24h');
+                    form.append('fileToUpload', fs.createReadStream(actualFilePath));
+
+                    const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
+                        headers: form.getHeaders(),
+                        maxBodyLength: Infinity,
+                        maxContentLength: Infinity
+                    });
+
+                    socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: response.data });
+                    
+                    // Como el video es muy pesado, no lo adjuntamos, solo mandamos el Embed con el link
+                    await processingMsg.edit({
+                        content: ` `,
+                        embeds: [socialEmbed]
+                    });
+                }
             } else {
-                // Si pesa más de 8MB, mandamos el video a Litterbox y actualizamos el Embed
-                await processingMsg.edit("Archivo muy pesado. Subiendo a servidor temporal...");
-
-                const form = new FormData();
-                form.append('reqtype', 'fileupload');
-                form.append('time', '24h');
-                form.append('fileToUpload', fs.createReadStream(actualFilePath));
-
-                const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
-                    headers: form.getHeaders(),
-                    maxBodyLength: Infinity,
-                    maxContentLength: Infinity
-                });
-
-                const litterboxUrl = response.data;
-
-                // Le agregamos el link temporal directamente al Embed
-                socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: litterboxUrl });
-
+                // MODO REVISTA: Falló la descarga de video, así que solo enviamos el Embed con la foto y el texto
                 await processingMsg.edit({
                     content: ` `,
                     embeds: [socialEmbed]
                 });
-                await message.suppressEmbeds(true);
             }
+            
+            // Ocultamos el link original feo en todos los casos
+            await message.suppressEmbeds(true);
 
         } catch (error) {
-            console.error(`Error en módulo universal (${link}):`, error.message);
+            // Este catch ahora solo se activa si falla la extracción inicial de metadatos (ej. link roto)
+            console.error(`Error crítico en módulo universal (${link}):`, error.message);
             await processingMsg.edit("No se pudo extraer (Puede ser privado o haber sido borrado).").catch(() => { });
-            setTimeout(() => processingMsg.delete().catch(() => { }), 5000); // Borramos el error a los 5 segundos
+            setTimeout(() => processingMsg.delete().catch(() => { }), 5000); 
         } finally {
-            // 8. Limpieza implacable del servidor Linux
             if (actualFilePath && fs.existsSync(actualFilePath)) {
                 fs.unlinkSync(actualFilePath);
             }
         }
-    }
 
     // --- MÓDULO DE EXTRACCIÓN: FACEBOOK ---
     const fbRegex = /https?:\/\/(?:www\.)?facebook\.com\/[^\s]+/gi;
