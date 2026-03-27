@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs'); // Para leer archivos y ver su peso
 const path = require('path'); // Para manejar las rutas de los archivos
 const axios = require('axios'); // Para subir a Litterbox
@@ -22,78 +22,79 @@ client.once('clientReady', () => {
     console.log(`🚂 ¡Project Aurora encendido e iniciado sesión como ${client.user.tag}!`);
 });
 
+
+
 client.on('interactionCreate', async interaction => {
-    // Si la interacción no es un slash command, la ignoramos
     if (!interaction.isChatInputCommand()) return;
 
-    if (interaction.commandName === 'aurora') {
-        // 1. Calculamos el tiempo activo (Uptime)
+    if (interaction.commandName === 'about') {
+        // 1. Cálculos del Bot
         const totalSeconds = interaction.client.uptime / 1000;
         const days = Math.floor(totalSeconds / 86400);
         const hours = Math.floor((totalSeconds % 86400) / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const uptime = `${days}d ${hours}h ${minutes}m`;
-
-        // 2. Extraemos la cantidad de servidores
         const serverCount = interaction.client.guilds.cache.size.toString();
+        
+        const botCreationTimestamp = Math.floor(interaction.client.user.createdTimestamp / 1000);
+        const botCreationDate = `<t:${botCreationTimestamp}:D>`;
 
-        // 3. Formateamos la fecha de creación (Usamos el formato nativo de Discord)
-        const creationTimestamp = Math.floor(interaction.client.user.createdTimestamp / 1000);
-        const creationDate = `<t:${creationTimestamp}:D>`; // Se mostrará traducido al idioma del usuario
+        // 2. Información Visual del Usuario (Solicitante)
+        const userAvatar = interaction.user.displayAvatarURL({ dynamic: true, size: 512 });
 
-        // 4. Construimos el Embed con tus campos exactos
+        // 3. TU GIF PERSONALIZADO 🎁
+        const gifPersonalizadoUrl = 'https://media.discordapp.net/attachments/1454490078918217903/1454650610816126997/cd11a6b1bd039316e1139721a55e96ca.gif?ex=69b01fb3&is=69aece33&hm=7bbab78553b360fa4768b79b455db5e9cbfad02d64d5f58260cabdd33d6d9fc4&';
+
+        // 4. CONSTRUCCIÓN DEL EMBED 
         const infoEmbed = new EmbedBuilder()
-            .setColor('#2F3136') 
-            .setThumbnail(interaction.client.user.displayAvatarURL())
-            .addFields(
-                { name: '🤖 Nombre del Bot', value: interaction.client.user.username, inline: true },
-                { name: '👑 Dev', value: 'Hyo', inline: true },
-                { name: '⏱️ Tiempo Activo', value: uptime, inline: true },
-                { name: '📅 Fecha de Creación', value: creationDate, inline: true },
-                { name: '🌍 Cantidad de Servidores', value: serverCount, inline: true }
-            )
-            .setFooter({ 
-                text: `Solicitado por ${interaction.user.username}`, 
-                iconURL: interaction.user.displayAvatarURL() 
-            });
-
-        // 5. Enviamos la respuesta
-        await interaction.reply({ embeds: [infoEmbed] });
-    }
-});
-
-client.on('interactionCreate', async interaction => {
-    // Si la interacción no es un slash command, la ignoramos
-    if (!interaction.isChatInputCommand()) return;
-
-    if (interaction.commandName === 'aurora') {
-        const days = Math.floor(interaction.client.uptime / 86400000);
-        const hours = Math.floor(interaction.client.uptime / 3600000) % 24;
-        const minutes = Math.floor(interaction.client.uptime / 60000) % 60;
-        const uptime = `${days}d ${hours}h ${minutes}m`;
-
-        const infoEmbed = new EmbedBuilder()
-            .setTitle('✨ Project Aurora | Sistema en Línea')
-            .setColor('#2F3136') 
-            .setThumbnail(interaction.client.user.displayAvatarURL())
-            .setDescription('Asistente multipropósito especializado en extracción multimedia nativa y utilidades de servidor.')
-            .addFields(
-                { name: '📊 Estado del Servidor', value: `📡 Ping: \`${interaction.client.ws.ping}ms\`\n⏱️ Tiempo activo: \`${uptime}\`\n📚 discord.js: \`v${version}\``, inline: false },
-                { name: '👑 Dev', value: 'Hyo', inline: true },
-                { name: '📍 Base de Operaciones', value: 'Navojoa, Sonora', inline: true },
-                { name: '\u200B', value: '\u200B', inline: true }, 
-                { name: '⚙️ Hardware de Pruebas', value: '`Ryzen 7 5700X3D` | `RTX 5070 Ti`', inline: true },
-                { name: '🛠️ Stack Principal', value: '`Node.js` `Java` `Unity` `Arduino`', inline: true },
-                )
-            .setFooter({ 
-                text: `Solicitado por ${interaction.user.username}`, 
-                iconURL: interaction.user.displayAvatarURL() 
+            .setColor('#2F3136') // Gris oscuro elegante
+            .setAuthor({ 
+                name: `Perfil Solicitante: ${interaction.user.username}`, 
+                iconURL: userAvatar 
             })
-            .setTimestamp();
+            // El Thumbnail a la derecha es la foto del Bot
+            .setThumbnail(interaction.client.user.displayAvatarURL())
+            // Usamos el GIF personalizado en grande
+            .setImage(gifPersonalizadoUrl) 
+            .setDescription(
+                `**<:Miku1:1480703103274586222> Desarrollador**\n` +
+                `└ \`Hyo\`\n\n` +
+ 
+                `**<:waos:1480704308218695850> Cumpleaños**\n` +
+                `└ ${botCreationDate}\n\n` +
+                
+                `**⏱️ Tiempo Activo**\n` +
+                `└ \`${uptime}\`\n\n` +
+                
+                `**<:abacho:1195591404534112376> Servidores**\n` +
+                `└ \`${serverCount}\` servers\n\n`
+                
+            );
 
-        await interaction.reply({ embeds: [infoEmbed] });
+        // 5. CREACIÓN DE LOS BOTONES (ActionRow)
+        const buttonsRow = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setLabel('GitHub Profile')
+                    .setStyle(ButtonStyle.Link)
+                    .setEmoji('🔗') 
+                    .setURL('https://github.com/Hyo-D'),
+
+                new ButtonBuilder()
+                    .setLabel('Sitio Web (Próximamente)')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setCustomId('portfolio_pending')
+                    .setDisabled(true) // Desactivado por ahora
+            );
+
+        // 6. ENVIAMOS LA RESPUESTA
+        await interaction.reply({ 
+            embeds: [infoEmbed], 
+            components: [buttonsRow] 
+        });
     }
 });
+
 
 // Escuchar cada mensaje que se envía
 client.on('messageCreate', async message => {
@@ -103,47 +104,115 @@ client.on('messageCreate', async message => {
     const content = message.content;
     let linksToFix = [];
 
-    // --- MÓDULO RÁPIDO: TIKTOK, X, INSTAGRAM ---
-    const tiktokRegex = /https?:\/\/(?:www\.)?(?:vm\.)?tiktok\.com\/[^\s]+/gi;
-    const twitterRegex = /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[^\s]+/gi;
-    const instaRegex = /https?:\/\/(?:www\.)?instagram\.com\/[^\s]+/gi;
+   // --- MÓDULO UNIVERSAL: TIKTOK, X, INSTAGRAM ---
+    const socialRegex = /https?:\/\/(?:www\.)?(?:vm\.|vt\.|v\.)?(?:tiktok\.com|twitter\.com|x\.com|instagram\.com)\/[^\s]+/gi;
+    const socialMatches = content.match(socialRegex);
 
-    // 1. TikTok -> tnktok.com
-    const tiktokMatches = content.match(tiktokRegex);
-    if (tiktokMatches) {
-        tiktokMatches.forEach(link => {
-            linksToFix.push(link.replace(/tiktok\.com/gi, 'tnktok.com'));
-        });
-    }
+    if (socialMatches) {
+        // Para no saturar el bot, procesamos solo el primer enlace que encuentre en el mensaje
+        const link = socialMatches[0]; 
+        const processingMsg = await message.reply("Analizando metadatos y extrayendo contenido...");
+        let actualFilePath = null;
 
-    // 2. Twitter/X -> vxtwitter.com
-    const twitterMatches = content.match(twitterRegex);
-    if (twitterMatches) {
-        twitterMatches.forEach(link => {
-            linksToFix.push(link.replace(/(twitter|x)\.com/gi, 'vxtwitter.com'));
-        });
-    }
-
-    // 3. Instagram -> vxinstagram.com
-    const instaMatches = content.match(instaRegex);
-    if (instaMatches) {
-        instaMatches.forEach(link => {
-            const cleanLink = link.split('?')[0];
-            linksToFix.push(cleanLink.replace(/instagram\.com/gi, 'vxinstagram.com'));
-        });
-    }
-
-    // Si encontramos al menos un link rápido para arreglar, lo enviamos de inmediato
-    if (linksToFix.length > 0) {
         try {
-            await message.suppressEmbeds(true);
-            const finalLinks = linksToFix.join('\n');
-            await message.reply({ 
-                content: finalLinks, 
-                allowedMentions: { repliedUser: false } 
+            // 1. Extraemos el "chisme" (Metadata JSON) SIN descargar el video todavía
+            const metadata = await youtubedl(link, { 
+                dumpJson: true, 
+                noWarnings: true 
             });
+
+            // 2. Preparamos los colores y nombres según la red social
+            let embedColor = '#2F3136'; // Color por defecto
+            let platformName = 'Red Social';
+            
+            if (link.includes('tiktok.com')) {
+                embedColor = '#000000'; // Negro TikTok
+                platformName = 'TikTok';
+            } else if (link.includes('twitter.com') || link.includes('x.com')) {
+                embedColor = '#1DA1F2'; // Azul Twitter
+                platformName = 'X (Twitter)';
+            } else if (link.includes('instagram.com')) {
+                embedColor = '#E1306C'; // Rosa Instagram
+                platformName = 'Instagram';
+            }
+
+            // 3. Rescatamos la información (A veces las plataformas usan nombres de variables distintos)
+            const postText = metadata.title || metadata.description || 'Sin descripción';
+            const authorName = metadata.uploader || metadata.creator || 'Usuario desconocido';
+
+            // 4. Armamos nuestro Embed de alta calidad
+            const socialEmbed = new EmbedBuilder()
+                .setColor(embedColor)
+                .setAuthor({ name: `👤 ${authorName} en ${platformName}` })
+                .setDescription(`> ${postText.substring(0, 4000)}`) // Evitamos crashear si el texto es excesivamente largo
+                .setFooter({ text: 'Project Aurora ✨' });
+
+            // 5. ¡A descargar el archivo real!
+            await processingMsg.edit("Descargando multimedia original...");
+            
+            const baseName = `aurora_social_${Date.now()}`;
+            const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
+            
+            await youtubedl(link, {
+                output: outputTemplate,
+                noWarnings: true
+            });
+
+            // 6. Buscamos el archivo en la carpeta (Igual que con Pinterest)
+            const files = fs.readdirSync(__dirname);
+            const downloadedFileName = files.find(file => file.startsWith(baseName));
+
+            if (!downloadedFileName) throw new Error("Archivo no generado por el motor.");
+
+            actualFilePath = path.join(__dirname, downloadedFileName);
+            const stats = fs.statSync(actualFilePath);
+            const fileSizeInMB = stats.size / (1024 * 1024);
+
+            // 7. Enviamos el "Combo" (Embed + Archivo) a Discord
+            if (fileSizeInMB <= 8) {
+                const attachment = new AttachmentBuilder(actualFilePath);
+                await processingMsg.edit({ 
+                    content: ` `, 
+                    embeds: [socialEmbed],
+                    files: [attachment] 
+                });
+                await message.suppressEmbeds(true);
+            } else {
+                // Si pesa más de 8MB, mandamos el video a Litterbox y actualizamos el Embed
+                await processingMsg.edit("Archivo muy pesado. Subiendo a servidor temporal...");
+                
+                const form = new FormData();
+                form.append('reqtype', 'fileupload');
+                form.append('time', '24h');
+                form.append('fileToUpload', fs.createReadStream(actualFilePath));
+
+                const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
+                    headers: form.getHeaders(),
+                    maxBodyLength: Infinity,
+                    maxContentLength: Infinity
+                });
+
+                const litterboxUrl = response.data;
+                
+                // Le agregamos el link temporal directamente al Embed
+                socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: litterboxUrl });
+
+                await processingMsg.edit({ 
+                    content: ` `,
+                    embeds: [socialEmbed] 
+                });
+                await message.suppressEmbeds(true);
+            }
+
         } catch (error) {
-            console.error('Error al procesar los mensajes rápidos:', error);
+            console.error(`Error en módulo universal (${link}):`, error.message);
+            await processingMsg.edit("No se pudo extraer (Puede ser privado o haber sido borrado).").catch(() => {});
+            setTimeout(() => processingMsg.delete().catch(() => {}), 5000); // Borramos el error a los 5 segundos
+        } finally {
+            // 8. Limpieza implacable del servidor Linux
+            if (actualFilePath && fs.existsSync(actualFilePath)) {
+                fs.unlinkSync(actualFilePath);
+            }
         }
     }
 
@@ -214,9 +283,9 @@ client.on('messageCreate', async message => {
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
     }
-
-   // --- MÓDULO DE EXTRACCIÓN: PINTEREST ---
-    const pinRegex = /https?:\/\/(?:www\.)?(?:pinterest\.[a-z]+\/pin\/|pin\.it\/)[^\s]+/gi;
+  
+    // --- MÓDULO DE EXTRACCIÓN: PINTEREST ---
+const pinRegex = /https?:\/\/(?:[a-z0-9-]+\.)*(?:pinterest\.[a-z.]+\/pin\/|pin\.it\/)[^\s]+/gi;
     const pinMatches = content.match(pinRegex);
 
     if (pinMatches) {

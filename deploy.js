@@ -4,7 +4,7 @@ const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 // Aquí construimos la información que Discord va a leer
 const commands = [
     new SlashCommandBuilder()
-        .setName('aurora')
+        .setName('about')
         .setDescription('Muestra la información técnica del bot y el perfil del creador.')
 ].map(command => command.toJSON());
 
