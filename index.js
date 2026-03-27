@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
 const fs = require('fs'); // Para leer archivos y ver su peso
 const path = require('path'); // Para manejar las rutas de los archivos
 const axios = require('axios'); // Para subir a Litterbox
@@ -35,7 +35,7 @@ client.on('interactionCreate', async interaction => {
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const uptime = `${days}d ${hours}h ${minutes}m`;
         const serverCount = interaction.client.guilds.cache.size.toString();
-        
+
         const botCreationTimestamp = Math.floor(interaction.client.user.createdTimestamp / 1000);
         const botCreationDate = `<t:${botCreationTimestamp}:D>`;
 
@@ -48,27 +48,27 @@ client.on('interactionCreate', async interaction => {
         // 4. CONSTRUCCIÓN DEL EMBED 
         const infoEmbed = new EmbedBuilder()
             .setColor('#2F3136') // Gris oscuro elegante
-            .setAuthor({ 
-                name: `Perfil Solicitante: ${interaction.user.username}`, 
-                iconURL: userAvatar 
+            .setAuthor({
+                name: `${interaction.user.username}`,
+                iconURL: userAvatar
             })
             // El Thumbnail a la derecha es la foto del Bot
             .setThumbnail(interaction.client.user.displayAvatarURL())
             // Usamos el GIF personalizado en grande
-            .setImage(gifPersonalizadoUrl) 
+            .setImage(gifPersonalizadoUrl)
             .setDescription(
                 `**<:Miku1:1480703103274586222> Desarrollador**\n` +
-                `└ \`Hyo\`\n\n` +
- 
+                `└ \`Hyo_d\`\n\n` +
+
                 `**<:waos:1480704308218695850> Cumpleaños**\n` +
                 `└ ${botCreationDate}\n\n` +
-                
+
                 `**⏱️ Tiempo Activo**\n` +
                 `└ \`${uptime}\`\n\n` +
-                
+
                 `**<:abacho:1195591404534112376> Servidores**\n` +
                 `└ \`${serverCount}\` servers\n\n`
-                
+
             );
 
         // 5. CREACIÓN DE LOS BOTONES (ActionRow)
@@ -77,7 +77,7 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder()
                     .setLabel('GitHub Profile')
                     .setStyle(ButtonStyle.Link)
-                    .setEmoji('🔗') 
+                    .setEmoji('🔗')
                     .setURL('https://github.com/Hyo-D'),
 
                 new ButtonBuilder()
@@ -88,9 +88,9 @@ client.on('interactionCreate', async interaction => {
             );
 
         // 6. ENVIAMOS LA RESPUESTA
-        await interaction.reply({ 
-            embeds: [infoEmbed], 
-            components: [buttonsRow] 
+        await interaction.reply({
+            embeds: [infoEmbed],
+            components: [buttonsRow]
         });
     }
 });
@@ -104,27 +104,27 @@ client.on('messageCreate', async message => {
     const content = message.content;
     let linksToFix = [];
 
-   // --- MÓDULO UNIVERSAL: TIKTOK, X, INSTAGRAM ---
+    // --- MÓDULO UNIVERSAL: TIKTOK, X, INSTAGRAM ---
     const socialRegex = /https?:\/\/(?:www\.)?(?:vm\.|vt\.|v\.)?(?:tiktok\.com|twitter\.com|x\.com|instagram\.com)\/[^\s]+/gi;
     const socialMatches = content.match(socialRegex);
 
     if (socialMatches) {
         // Para no saturar el bot, procesamos solo el primer enlace que encuentre en el mensaje
-        const link = socialMatches[0]; 
+        const link = socialMatches[0];
         const processingMsg = await message.reply("Analizando metadatos y extrayendo contenido...");
         let actualFilePath = null;
 
         try {
             // 1. Extraemos el "chisme" (Metadata JSON) SIN descargar el video todavía
-            const metadata = await youtubedl(link, { 
-                dumpJson: true, 
-                noWarnings: true 
+            const metadata = await youtubedl(link, {
+                dumpJson: true,
+                noWarnings: true
             });
 
             // 2. Preparamos los colores y nombres según la red social
             let embedColor = '#2F3136'; // Color por defecto
             let platformName = 'Red Social';
-            
+
             if (link.includes('tiktok.com')) {
                 embedColor = '#000000'; // Negro TikTok
                 platformName = 'TikTok';
@@ -149,10 +149,10 @@ client.on('messageCreate', async message => {
 
             // 5. ¡A descargar el archivo real!
             await processingMsg.edit("Descargando multimedia original...");
-            
+
             const baseName = `aurora_social_${Date.now()}`;
             const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
-            
+
             await youtubedl(link, {
                 output: outputTemplate,
                 noWarnings: true
@@ -171,16 +171,16 @@ client.on('messageCreate', async message => {
             // 7. Enviamos el "Combo" (Embed + Archivo) a Discord
             if (fileSizeInMB <= 8) {
                 const attachment = new AttachmentBuilder(actualFilePath);
-                await processingMsg.edit({ 
-                    content: ` `, 
+                await processingMsg.edit({
+                    content: ` `,
                     embeds: [socialEmbed],
-                    files: [attachment] 
+                    files: [attachment]
                 });
                 await message.suppressEmbeds(true);
             } else {
                 // Si pesa más de 8MB, mandamos el video a Litterbox y actualizamos el Embed
                 await processingMsg.edit("Archivo muy pesado. Subiendo a servidor temporal...");
-                
+
                 const form = new FormData();
                 form.append('reqtype', 'fileupload');
                 form.append('time', '24h');
@@ -193,21 +193,21 @@ client.on('messageCreate', async message => {
                 });
 
                 const litterboxUrl = response.data;
-                
+
                 // Le agregamos el link temporal directamente al Embed
                 socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: litterboxUrl });
 
-                await processingMsg.edit({ 
+                await processingMsg.edit({
                     content: ` `,
-                    embeds: [socialEmbed] 
+                    embeds: [socialEmbed]
                 });
                 await message.suppressEmbeds(true);
             }
 
         } catch (error) {
             console.error(`Error en módulo universal (${link}):`, error.message);
-            await processingMsg.edit("No se pudo extraer (Puede ser privado o haber sido borrado).").catch(() => {});
-            setTimeout(() => processingMsg.delete().catch(() => {}), 5000); // Borramos el error a los 5 segundos
+            await processingMsg.edit("No se pudo extraer (Puede ser privado o haber sido borrado).").catch(() => { });
+            setTimeout(() => processingMsg.delete().catch(() => { }), 5000); // Borramos el error a los 5 segundos
         } finally {
             // 8. Limpieza implacable del servidor Linux
             if (actualFilePath && fs.existsSync(actualFilePath)) {
@@ -221,15 +221,15 @@ client.on('messageCreate', async message => {
     const fbMatches = content.match(fbRegex);
 
     if (fbMatches) {
-        const fbLink = fbMatches[0].split('?')[0]; 
-        
+        const fbLink = fbMatches[0].split('?')[0];
+
         // VALIDACIÓN: Si es un post (/p/), una foto o algo privado, IGNORAMOS COMPLETAMENTE.
         // Solo dejamos pasar Reels (/r/), Videos (/v/) o enlaces de Watch.
-        const isDownloadable = fbLink.includes('/reels/') || 
-                               fbLink.includes('/share/v/') || 
-                               fbLink.includes('/share/r/') || 
-                               fbLink.includes('/watch/') ||
-                               fbLink.includes('video.php');
+        const isDownloadable = fbLink.includes('/reels/') ||
+            fbLink.includes('/share/v/') ||
+            fbLink.includes('/share/r/') ||
+            fbLink.includes('/watch/') ||
+            fbLink.includes('video.php');
 
         if (!isDownloadable) return; // Si no es un video claro, Aurora no hace nada.
 
@@ -239,9 +239,9 @@ client.on('messageCreate', async message => {
 
         try {
             await youtubedl(fbLink, {
-                output: filePath, 
-                format: 'w', 
-            
+                output: filePath,
+                format: 'w',
+
             });
 
             const stats = fs.statSync(filePath);
@@ -249,21 +249,21 @@ client.on('messageCreate', async message => {
 
             if (fileSizeInMB <= 8) {
                 const attachment = new AttachmentBuilder(filePath);
-                await processingMsg.edit({ 
-                    content: ` `, 
-                    files: [attachment] 
+                await processingMsg.edit({
+                    content: ` `,
+                    files: [attachment]
                 });
                 await message.suppressEmbeds(true);
             } else {
                 //Es pesado. Subir a Litterbox
                 await processingMsg.edit("** Archivo mayor a 8MB. Subiendo a servidor temporal...");
-                
+
                 const form = new FormData();
                 form.append('reqtype', 'fileupload');
                 form.append('time', '24h'); // El video se autodestruirá en 24 horas
                 form.append('fileToUpload', fs.createReadStream(filePath));
 
-                
+
                 const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
                     headers: form.getHeaders(),
                     maxBodyLength: Infinity,
@@ -278,32 +278,32 @@ client.on('messageCreate', async message => {
         } catch (error) {
             // Si falla a pesar de ser un video (por ser privado), borramos el mensaje de "Procesando"
             console.error("Error:", error.message);
-            await processingMsg.delete().catch(() => {}); 
+            await processingMsg.delete().catch(() => { });
         } finally {
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
     }
-  
+
     // --- MÓDULO DE EXTRACCIÓN: PINTEREST ---
-const pinRegex = /https?:\/\/(?:[a-z0-9-]+\.)*(?:pinterest\.[a-z.]+\/pin\/|pin\.it\/)[^\s]+/gi;
+    const pinRegex = /https?:\/\/(?:[a-z0-9-]+\.)*(?:pinterest\.[a-z.]+\/pin\/|pin\.it\/)[^\s]+/gi;
     const pinMatches = content.match(pinRegex);
 
     if (pinMatches) {
-        const pinLink = pinMatches[0].split('?')[0]; 
+        const pinLink = pinMatches[0].split('?')[0];
         const processingMsg = await message.reply("Extrayendo Pin...");
-        
+
         // 1. Creamos un nombre base ÚNICO, sin extensión
         const baseName = `aurora_pin_${Date.now()}`;
         // 2. Le decimos a yt-dlp que use el nombre base y le ponga la extensión real del archivo
         const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
-        
+
         let actualFilePath = null; // Variable para guardar la ruta real y poder borrarla al final
 
         try {
             // 3. Descargamos totalmente libres, sin formato
             await youtubedl(pinLink, {
                 output: outputTemplate,
-                
+
                 mergeOutputFormat: 'mp4',
                 noWarnings: true
             });
@@ -316,20 +316,20 @@ const pinRegex = /https?:\/\/(?:[a-z0-9-]+\.)*(?:pinterest\.[a-z.]+\/pin\/|pin\.
 
             // 5. ¡Lo atrapamos! Armamos la ruta real
             actualFilePath = path.join(__dirname, downloadedFileName);
-            
+
             const stats = fs.statSync(actualFilePath);
             const fileSizeInMB = stats.size / (1024 * 1024);
 
             if (fileSizeInMB <= 8) {
                 const attachment = new AttachmentBuilder(actualFilePath);
-                await processingMsg.edit({ 
-                    content: `📌`, 
-                    files: [attachment] 
+                await processingMsg.edit({
+                    content: `📌`,
+                    files: [attachment]
                 });
                 await message.suppressEmbeds(true);
             } else {
                 await processingMsg.edit("Pin pesado. Subiendo a servidor temporal...");
-                
+
                 const form = new FormData();
                 form.append('reqtype', 'fileupload');
                 form.append('time', '24h');
@@ -357,27 +357,27 @@ const pinRegex = /https?:\/\/(?:[a-z0-9-]+\.)*(?:pinterest\.[a-z.]+\/pin\/|pin\.
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
                     }
                 });
-                
+
                 // 2. FUERZA BRUTA: Buscamos cualquier enlace directo a imágenes de Pinterest en alta calidad (originals o 736x)
                 const imageRegex = /https:\/\/i\.pinimg\.com\/(?:originals|736x|564x)\/[a-f0-9]+\/[a-f0-9]+\/[a-f0-9]+\/[a-f0-9a-f]+\.(?:jpg|png|webp)/i;
                 const imageMatch = pageResponse.data.match(imageRegex);
-                
+
                 if (imageMatch && imageMatch[0]) {
                     const imageUrl = imageMatch[0];
                     console.log("¡Imagen encontrada en el código fuente! ->", imageUrl);
-                    
-                    await processingMsg.edit({ 
-                        content: `📌`, 
-                        files: [imageUrl] 
+
+                    await processingMsg.edit({
+                        content: `📌`,
+                        files: [imageUrl]
                     });
                     await message.suppressEmbeds(true);
                 } else {
                     console.log("❌ Axios descargó la página, pero no encontró enlaces de imágenes válidos.");
-                    await processingMsg.delete().catch(() => {});
+                    await processingMsg.delete().catch(() => { });
                 }
             } catch (fallbackError) {
                 console.error("❌ Fallo total en la conexión de Axios:", fallbackError.message);
-                await processingMsg.delete().catch(() => {});
+                await processingMsg.delete().catch(() => { });
             }
         } finally {
             if (actualFilePath && fs.existsSync(actualFilePath)) {
@@ -386,7 +386,7 @@ const pinRegex = /https?:\/\/(?:[a-z0-9-]+\.)*(?:pinterest\.[a-z.]+\/pin\/|pin\.
         }
     }
 
-    });
+});
 
 // Iniciar sesión con el token oculto
 client.login(process.env.DISCORD_TOKEN);
