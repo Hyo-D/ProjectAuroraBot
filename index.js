@@ -25,8 +25,9 @@ client.once('clientReady', () => {
 
 
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-
+    
+if (interaction.isChatInputCommand()) {
+        
     if (interaction.commandName === 'about') {
         // 1. Cálculos del Bot
         const totalSeconds = interaction.client.uptime / 1000;
@@ -92,6 +93,7 @@ client.on('interactionCreate', async interaction => {
             embeds: [infoEmbed],
             components: [buttonsRow]
         });
+    }
     }
 
     // --- SISTEMA DE BOTONES INTERACTIVOS ---
