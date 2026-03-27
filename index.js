@@ -236,8 +236,7 @@ client.on('messageCreate', async message => {
             const translateRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('translate_post')
-                    .setLabel('Traducir al Español')
-                    .setEmoji('🌍')
+                    .setLabel('Traducir')
                     .setStyle(ButtonStyle.Secondary)
             );
 
@@ -268,11 +267,15 @@ client.on('messageCreate', async message => {
             const fileSizeInMB = stats.size / (1024 * 1024);
 
             if (fileSizeInMB <= 8) {
+                // ¡FIX DE IMAGEN ESTÁTICA! Borramos la miniatura porque vamos a poner el video real
+                socialEmbed.setImage(null);
+
                 const attachment = new AttachmentBuilder(actualFilePath);
                 await processingMsg.edit({
                     content: ` `,
                     embeds: [socialEmbed],
-                    files: [attachment]
+                    files: [attachment],
+                    components: [translateRow] // ¡Botón añadido al video!
                 });
             } else {
                 const form = new FormData();
@@ -289,7 +292,8 @@ client.on('messageCreate', async message => {
                 socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: response.data });
                 await processingMsg.edit({
                     content: ` `,
-                    embeds: [socialEmbed]
+                    embeds: [socialEmbed],
+                    components: [translateRow] // ¡Botón añadido al Litterbox!
                 });
             }
             
