@@ -96,6 +96,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 
+
 // Escuchar cada mensaje que se envía
 client.on('messageCreate', async message => {
     // Si el mensaje lo envió un bot, lo ignoramos
@@ -232,6 +233,7 @@ client.on('messageCreate', async message => {
                 fs.unlinkSync(actualFilePath);
             }
         }
+        }   
 
     // --- MÓDULO DE EXTRACCIÓN: FACEBOOK ---
     const fbRegex = /https?:\/\/(?:www\.)?facebook\.com\/[^\s]+/gi;
