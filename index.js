@@ -93,6 +93,59 @@ client.on('interactionCreate', async interaction => {
             components: [buttonsRow]
         });
     }
+
+    // --- SISTEMA DE BOTONES INTERACTIVOS ---
+    if (interaction.isButton()) {
+        if (interaction.customId === 'translate_post') {
+            // Le decimos a Discord "Espérame, estoy procesando el clic"
+            await interaction.deferUpdate(); 
+
+            try {
+                // Sacamos el texto original del Embed al que le hicieron clic
+                const originalEmbed = interaction.message.embeds[0];
+                if (!originalEmbed || !originalEmbed.description) return;
+
+                // Le quitamos el "> " que le pusimos para citar
+                const originalText = originalEmbed.description.replace(/^> /, '');
+
+                // Hacemos una petición "ninja" a la API gratuita de Google Translate
+                const translateUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=es&dt=t&q=${encodeURIComponent(originalText)}`;
+                const response = await axios.get(translateUrl);
+                
+                // Armamos el texto traducido que nos devuelve Google
+                const translatedText = response.data[0].map(item => item[0]).join('');
+
+                // Reconstruimos el Embed pero con el texto en español
+                const updatedEmbed = EmbedBuilder.from(originalEmbed)
+                    .setDescription(`> ${translatedText}\n\n*(Traducido por Google)*`);
+
+                // Desactivamos el botón y lo ponemos en verde para mostrar éxito
+                const disabledButtonRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('translate_done')
+                        .setLabel('Traducido')
+                        .setEmoji('✅')
+                        .setStyle(ButtonStyle.Success)
+                        .setDisabled(true)
+                );
+
+                // Actualizamos el mensaje original con el nuevo Embed y el botón verde
+                await interaction.editReply({ 
+                    embeds: [updatedEmbed], 
+                    components: [disabledButtonRow] 
+                });
+
+            } catch (error) {
+                console.error("Error al traducir:", error.message);
+                // Si falla, le mandamos un mensaje invisible solo al usuario que dio clic
+                await interaction.followUp({ 
+                    content: "❌ Hubo un error al intentar traducir el texto. Intenta de nuevo más tarde.", 
+                    ephemeral: true 
+                });
+            }
+        }
+    }
+
 });
 
 
@@ -121,6 +174,7 @@ client.on('messageCreate', async message => {
             let platformName = 'Red Social';
             let postText = 'Sin descripción';
             let authorName = 'Usuario desconocido';
+            let authorAvatar = null;
             let thumbnailUrl = null;
             let hasVideoToDownload = true; // Asumimos que hay video, a menos que probemos lo contrario
 
@@ -136,6 +190,7 @@ client.on('messageCreate', async message => {
 
                 postText = data.text || postText;
                 authorName = `${data.user_name} (@${data.user_screen_name})`;
+                authorAvatar = data.user_profile_image_url;
 
                 // Verificamos si hay archivos adjuntos y de qué tipo son
                 const media = data.media_extended || [];
@@ -163,19 +218,31 @@ client.on('messageCreate', async message => {
                 }
             }
 
-            // 3. ARMAMOS EL EMBED DE ALTA CALIDAD (Sin links visibles)
+            // 3. ARMAMOS EL EMBED DE ALTA CALIDAD
             const socialEmbed = new EmbedBuilder()
                 .setColor(embedColor)
-                .setAuthor({ name: `👤 ${authorName} en ${platformName}` })
+                .setAuthor({ 
+                    name: `👤 ${authorName} en ${platformName}`, 
+                    iconURL: authorAvatar || undefined // Ponemos la foto si existe
+                })
                 .setDescription(`> ${postText.substring(0, 4000)}`) 
                 .setFooter({ text: 'Project Aurora ✨' });
 
             if (thumbnailUrl) socialEmbed.setImage(thumbnailUrl);
 
+            // CREAMOS EL BOTÓN DE TRADUCCIÓN
+            const translateRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('translate_post')
+                    .setLabel('Traducir al Español')
+                    .setEmoji('🌍')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
             // 4. EVALUACIÓN RÁPIDA: ¿Modo Revista o Modo Video?
             if (!hasVideoToDownload) {
-                // MODO REVISTA: Es solo texto o foto. Enviamos el Embed de inmediato.
-                await processingMsg.edit({ content: ` `, embeds: [socialEmbed] });
+                // MODO REVISTA
+                await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [translateRow] });
                 await message.suppressEmbeds(true); // Ocultamos el link del usuario
                 return; // ¡TERMINAMOS AQUÍ! Cero tiempos de carga.
             }
