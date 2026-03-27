@@ -224,10 +224,24 @@ client.on('messageCreate', async message => {
             await message.suppressEmbeds(true);
 
         } catch (error) {
-            // Este catch ahora solo se activa si falla la extracción inicial de metadatos (ej. link roto)
-            console.error(`Error crítico en módulo universal (${link}):`, error.message);
-            await processingMsg.edit("No se pudo extraer (Puede ser privado o haber sido borrado).").catch(() => { });
-            setTimeout(() => processingMsg.delete().catch(() => { }), 5000); 
+            // Si yt-dlp falla desde el principio (porque es un Tweet con solo texto/imagen)
+            console.log(`[Universal] yt-dlp no pudo extraer ${link}. Usando Plan B de enlaces rápidos.`);
+            
+            // Reutilizamos tu técnica clásica para salvar la foto estática
+            let fallbackLink = link;
+            if (link.includes('tiktok.com')) fallbackLink = link.replace(/tiktok\.com/gi, 'tnktok.com');
+            else if (link.includes('twitter.com') || link.includes('x.com')) fallbackLink = link.replace(/(twitter|x)\.com/gi, 'vxtwitter.com');
+            else if (link.includes('instagram.com')) fallbackLink = link.replace(/instagram\.com/gi, 'vxinstagram.com');
+
+            // Editamos el mensaje "Espere..." con el enlace convertido para que Discord muestre la imagen
+            if (fallbackLink !== link) {
+                // Restauramos los embeds por si estaban suprimidos, para que Discord dibuje la foto
+                await message.suppressEmbeds(false).catch(() => {});
+                await processingMsg.edit({ content: fallbackLink, embeds: [] });
+            } else {
+                await processingMsg.edit("No se pudo extraer (Puede ser privado o haber sido borrado).").catch(() => { });
+                setTimeout(() => processingMsg.delete().catch(() => { }), 5000); 
+            }
         } finally {
             if (actualFilePath && fs.existsSync(actualFilePath)) {
                 fs.unlinkSync(actualFilePath);
