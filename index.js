@@ -116,138 +116,126 @@ client.on('messageCreate', async message => {
         let actualFilePath = null;
 
         try {
-            // 1. Extraemos el "chisme" (Metadata JSON) SIN descargar el video todavía
-            const metadata = await youtubedl(link, {
-                dumpJson: true,
-                noWarnings: true
-            });
-
-            // 2. Preparamos los colores y nombres según la red social
-            let embedColor = '#2F3136'; // Color por defecto
+            // 1. VARIABLES BASE
+            let embedColor = '#2F3136'; 
             let platformName = 'Red Social';
+            let postText = 'Sin descripción';
+            let authorName = 'Usuario desconocido';
+            let thumbnailUrl = null;
+            let hasVideoToDownload = true; // Asumimos que hay video, a menos que probemos lo contrario
 
-            if (link.includes('tiktok.com')) {
-                embedColor = '#000000'; // Negro TikTok
-                platformName = 'TikTok';
-            } else if (link.includes('twitter.com') || link.includes('x.com')) {
-                embedColor = '#1DA1F2'; // Azul Twitter
+            // 2. EXTRACCIÓN A LA VELOCIDAD DE LA LUZ (Bypass para Twitter/X)
+            if (link.includes('twitter.com') || link.includes('x.com')) {
+                embedColor = '#1DA1F2'; 
                 platformName = 'X (Twitter)';
-            } else if (link.includes('instagram.com')) {
-                embedColor = '#E1306C'; // Rosa Instagram
-                platformName = 'Instagram';
+                
+                // Convertimos el link al formato API y extraemos el JSON en milisegundos
+                const apiUrl = link.replace(/(?:www\.)?(?:twitter|x)\.com/gi, 'api.vxtwitter.com').split('?')[0];
+                const res = await axios.get(apiUrl);
+                const data = res.data;
+
+                postText = data.text || postText;
+                authorName = `${data.user_name} (@${data.user_screen_name})`;
+
+                // Verificamos si hay archivos adjuntos y de qué tipo son
+                const media = data.media_extended || [];
+                const videoMedia = media.find(m => m.type === 'video' || m.type === 'gif');
+
+                if (!videoMedia && media.length > 0) {
+                    // ¡Es solo una imagen! Apagamos yt-dlp y tomamos la URL de la foto en alta calidad
+                    hasVideoToDownload = false; 
+                    thumbnailUrl = media[0].url; 
+                } else if (!videoMedia && media.length === 0) {
+                    // ¡Es solo texto! Apagamos yt-dlp
+                    hasVideoToDownload = false;
+                }
+            } else {
+                // Para TikTok e Instagram, yt-dlp sigue siendo rapidísimo extrayendo metadatos
+                const metadata = await youtubedl(link, { dumpJson: true, noWarnings: true });
+                postText = metadata.title || metadata.description || postText;
+                authorName = metadata.uploader || metadata.creator || authorName;
+                thumbnailUrl = metadata.thumbnail;
+
+                if (link.includes('tiktok.com')) {
+                    embedColor = '#000000'; platformName = 'TikTok';
+                } else if (link.includes('instagram.com')) {
+                    embedColor = '#E1306C'; platformName = 'Instagram';
+                }
             }
 
-            // 3. Rescatamos la información (A veces las plataformas usan nombres de variables distintos)
-            const postText = metadata.title || metadata.description || 'Sin descripción';
-            const authorName = metadata.uploader || metadata.creator || 'Usuario desconocido';
-
-            // 4. Armamos nuestro Embed de alta calidad
+            // 3. ARMAMOS EL EMBED DE ALTA CALIDAD (Sin links visibles)
             const socialEmbed = new EmbedBuilder()
                 .setColor(embedColor)
                 .setAuthor({ name: `👤 ${authorName} en ${platformName}` })
                 .setDescription(`> ${postText.substring(0, 4000)}`) 
                 .setFooter({ text: 'Project Aurora ✨' });
 
-            // Si hay una imagen en miniatura en los metadatos, se la pre-cargamos al Embed por si acaso
-            if (metadata.thumbnail) {
-                socialEmbed.setImage(metadata.thumbnail);
+            if (thumbnailUrl) socialEmbed.setImage(thumbnailUrl);
+
+            // 4. EVALUACIÓN RÁPIDA: ¿Modo Revista o Modo Video?
+            if (!hasVideoToDownload) {
+                // MODO REVISTA: Es solo texto o foto. Enviamos el Embed de inmediato.
+                await processingMsg.edit({ content: ` `, embeds: [socialEmbed] });
+                await message.suppressEmbeds(true); // Ocultamos el link del usuario
+                return; // ¡TERMINAMOS AQUÍ! Cero tiempos de carga.
             }
 
-            // 5. ¡A descargar el archivo real!
-            
-
+            // 5. MODO VIDEO: Si llegamos aquí, sí hay video. Lo descargamos.
             const baseName = `aurora_social_${Date.now()}`;
             const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
 
-            let fileDownloaded = false;
+            await youtubedl(link, {
+                output: outputTemplate,
+                noWarnings: true
+            });
 
-            // INTENTO AISLADO: Si falla la descarga, no matamos el proceso entero
-            try {
-                await youtubedl(link, {
-                    output: outputTemplate,
-                    noWarnings: true
+            const files = fs.readdirSync(__dirname);
+            const downloadedFileName = files.find(file => file.startsWith(baseName));
+
+            if (!downloadedFileName) throw new Error("Video no encontrado tras descarga.");
+
+            actualFilePath = path.join(__dirname, downloadedFileName);
+            const stats = fs.statSync(actualFilePath);
+            const fileSizeInMB = stats.size / (1024 * 1024);
+
+            if (fileSizeInMB <= 8) {
+                const attachment = new AttachmentBuilder(actualFilePath);
+                await processingMsg.edit({
+                    content: ` `,
+                    embeds: [socialEmbed],
+                    files: [attachment]
+                });
+            } else {
+                const form = new FormData();
+                form.append('reqtype', 'fileupload');
+                form.append('time', '24h');
+                form.append('fileToUpload', fs.createReadStream(actualFilePath));
+
+                const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
+                    headers: form.getHeaders(),
+                    maxBodyLength: Infinity,
+                    maxContentLength: Infinity
                 });
 
-                const files = fs.readdirSync(__dirname);
-                const downloadedFileName = files.find(file => file.startsWith(baseName));
-
-                if (downloadedFileName) {
-                    actualFilePath = path.join(__dirname, downloadedFileName);
-                    fileDownloaded = true;
-                }
-            } catch (downloadError) {
-                console.log(`[Universal] No hay video para descargar en ${link}. Usando Modo Texto/Imagen.`);
-            }
-
-            // 6. Evaluamos qué enviar (Combo completo vs Solo Embed)
-            if (fileDownloaded) {
-                const stats = fs.statSync(actualFilePath);
-                const fileSizeInMB = stats.size / (1024 * 1024);
-
-                if (fileSizeInMB <= 8) {
-                    const attachment = new AttachmentBuilder(actualFilePath);
-                    await processingMsg.edit({
-                        content: ` `,
-                        embeds: [socialEmbed],
-                        files: [attachment]
-                    });
-                } else {
-                    
-                    const form = new FormData();
-                    form.append('reqtype', 'fileupload');
-                    form.append('time', '24h');
-                    form.append('fileToUpload', fs.createReadStream(actualFilePath));
-
-                    const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
-                        headers: form.getHeaders(),
-                        maxBodyLength: Infinity,
-                        maxContentLength: Infinity
-                    });
-
-                    socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: response.data });
-                    
-                    // Como el video es muy pesado, no lo adjuntamos, solo mandamos el Embed con el link
-                    await processingMsg.edit({
-                        content: ` `,
-                        embeds: [socialEmbed]
-                    });
-                }
-            } else {
-                // MODO REVISTA: Falló la descarga de video, así que solo enviamos el Embed con la foto y el texto
+                socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: response.data });
                 await processingMsg.edit({
                     content: ` `,
                     embeds: [socialEmbed]
                 });
             }
             
-            // Ocultamos el link original feo en todos los casos
             await message.suppressEmbeds(true);
 
         } catch (error) {
-            // Si yt-dlp falla desde el principio (porque es un Tweet con solo texto/imagen)
-            console.log(`[Universal] yt-dlp no pudo extraer ${link}. Usando Plan B de enlaces rápidos.`);
-            
-            // Reutilizamos tu técnica clásica para salvar la foto estática
-            let fallbackLink = link;
-            if (link.includes('tiktok.com')) fallbackLink = link.replace(/tiktok\.com/gi, 'tnktok.com');
-            else if (link.includes('twitter.com') || link.includes('x.com')) fallbackLink = link.replace(/(twitter|x)\.com/gi, 'vxtwitter.com');
-            else if (link.includes('instagram.com')) fallbackLink = link.replace(/instagram\.com/gi, 'vxinstagram.com');
-
-            // Editamos el mensaje "Espere..." con el enlace convertido para que Discord muestre la imagen
-            if (fallbackLink !== link) {
-                // Restauramos los embeds por si estaban suprimidos, para que Discord dibuje la foto
-                await message.suppressEmbeds(false).catch(() => {});
-                await processingMsg.edit({ content: fallbackLink, embeds: [] });
-            } else {
-                await processingMsg.edit("No se pudo extraer (Puede ser privado o haber sido borrado).").catch(() => { });
-                setTimeout(() => processingMsg.delete().catch(() => { }), 5000); 
-            }
+            console.error(`Error crítico en módulo universal (${link}):`, error.message);
+            await processingMsg.edit("No se pudo extraer el contenido.").catch(() => { });
+            setTimeout(() => processingMsg.delete().catch(() => { }), 3000); 
         } finally {
             if (actualFilePath && fs.existsSync(actualFilePath)) {
                 fs.unlinkSync(actualFilePath);
             }
+        } 
         }
-        }   
 
     // --- MÓDULO DE EXTRACCIÓN: FACEBOOK ---
     const fbRegex = /https?:\/\/(?:www\.)?facebook\.com\/[^\s]+/gi;
