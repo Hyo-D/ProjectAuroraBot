@@ -171,21 +171,27 @@ client.on('messageCreate', async message => {
         let actualFilePath = null;
 
         try {
-            // 1. VARIABLES BASE
+            // 1. VARIABLES BASE Y ENLACES DE RESPALDO (Plan B)
             let embedColor = '#2F3136'; 
             let platformName = 'Red Social';
             let postText = 'Sin descripción';
             let authorName = 'Usuario desconocido';
             let authorAvatar = null;
             let thumbnailUrl = null;
-            let hasVideoToDownload = true; // Asumimos que hay video, a menos que probemos lo contrario
+            let hasVideoToDownload = true; 
+            let isTwitterGif = false; // Bandera para detectar GIFs
+
+            // Preparamos el enlace "vx" correspondiente por si el video es pesado o es un GIF
+            let fallbackLink = link;
+            if (link.includes('tiktok.com')) fallbackLink = link.replace(/tiktok\.com/gi, 'tnktok.com');
+            else if (link.includes('twitter.com') || link.includes('x.com')) fallbackLink = link.replace(/(twitter|x)\.com/gi, 'vxtwitter.com');
+            else if (link.includes('instagram.com')) fallbackLink = link.replace(/instagram\.com/gi, 'vxinstagram.com');
 
             // 2. EXTRACCIÓN A LA VELOCIDAD DE LA LUZ (Bypass para Twitter/X)
             if (link.includes('twitter.com') || link.includes('x.com')) {
                 embedColor = '#1DA1F2'; 
                 platformName = 'X (Twitter)';
                 
-                // Convertimos el link al formato API y extraemos el JSON en milisegundos
                 const apiUrl = link.replace(/(?:www\.)?(?:twitter|x)\.com/gi, 'api.vxtwitter.com').split('?')[0];
                 const res = await axios.get(apiUrl);
                 const data = res.data;
@@ -194,20 +200,23 @@ client.on('messageCreate', async message => {
                 authorName = `${data.user_name} (@${data.user_screen_name})`;
                 authorAvatar = data.user_profile_image_url;
 
-                // Verificamos si hay archivos adjuntos y de qué tipo son
                 const media = data.media_extended || [];
                 const videoMedia = media.find(m => m.type === 'video' || m.type === 'gif');
 
-                if (!videoMedia && media.length > 0) {
-                    // ¡Es solo una imagen! Apagamos yt-dlp y tomamos la URL de la foto en alta calidad
+                if (videoMedia) {
+                    // ¡NUEVO! Detectamos si es un GIF de Twitter
+                    if (videoMedia.type === 'gif') {
+                        isTwitterGif = true;
+                        hasVideoToDownload = false; // Apagamos yt-dlp, usaremos el enlace directo
+                    }
+                } else if (media.length > 0) {
                     hasVideoToDownload = false; 
                     thumbnailUrl = media[0].url; 
-                } else if (!videoMedia && media.length === 0) {
-                    // ¡Es solo texto! Apagamos yt-dlp
+                } else {
                     hasVideoToDownload = false;
                 }
             } else {
-                // Para TikTok e Instagram, yt-dlp sigue siendo rapidísimo extrayendo metadatos
+                // Para TikTok e Instagram
                 const metadata = await youtubedl(link, { dumpJson: true, noWarnings: true });
                 postText = metadata.title || metadata.description || postText;
                 authorName = metadata.uploader || metadata.creator || authorName;
@@ -225,7 +234,7 @@ client.on('messageCreate', async message => {
                 .setColor(embedColor)
                 .setAuthor({ 
                     name: `👤 ${authorName} en ${platformName}`, 
-                    iconURL: authorAvatar || undefined // Ponemos la foto si existe
+                    iconURL: authorAvatar || undefined 
                 })
                 .setDescription(`> ${postText.substring(0, 4000)}`) 
                 .setFooter({ text: 'Project Aurora ✨' });
@@ -236,19 +245,28 @@ client.on('messageCreate', async message => {
             const translateRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('translate_post')
-                    .setLabel('Traducir')
+                    .setLabel('Traducir al Español')
+                    .setEmoji('🌍')
                     .setStyle(ButtonStyle.Secondary)
             );
 
-            // 4. EVALUACIÓN RÁPIDA: ¿Modo Revista o Modo Video?
+            // 4. EVALUACIÓN RÁPIDA: ¿Modo Revista, Modo GIF o Modo Video?
             if (!hasVideoToDownload) {
-                // MODO REVISTA
-                await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [translateRow] });
-                await message.suppressEmbeds(true); // Ocultamos el link del usuario
-                return; // ¡TERMINAMOS AQUÍ! Cero tiempos de carga.
+                if (isTwitterGif) {
+                    // MODO GIF: Enviamos el enlace vx para que Discord lo renderice como GIF nativo
+                    socialEmbed.setImage(null); // Quitamos la imagen para no encimar
+                    await processingMsg.edit({ content: fallbackLink, embeds: [socialEmbed], components: [translateRow] });
+                    await message.suppressEmbeds(false); // NO lo ocultamos, queremos ver el GIF
+                    return;
+                } else {
+                    // MODO REVISTA: Solo foto o texto
+                    await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [translateRow] });
+                    await message.suppressEmbeds(true); 
+                    return; 
+                }
             }
 
-            // 5. MODO VIDEO: Si llegamos aquí, sí hay video. Lo descargamos.
+            // 5. MODO VIDEO: Sí hay video normal, procedemos a descargar.
             const baseName = `aurora_social_${Date.now()}`;
             const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
 
@@ -267,17 +285,20 @@ client.on('messageCreate', async message => {
             const fileSizeInMB = stats.size / (1024 * 1024);
 
             if (fileSizeInMB <= 8) {
-                // ¡FIX DE IMAGEN ESTÁTICA! Borramos la miniatura porque vamos a poner el video real
-                socialEmbed.setImage(null);
-
+                // VIDEO LIGERO: Se sube directo
+                socialEmbed.setImage(null); 
                 const attachment = new AttachmentBuilder(actualFilePath);
+                
                 await processingMsg.edit({
                     content: ` `,
                     embeds: [socialEmbed],
                     files: [attachment],
-                    components: [translateRow] // ¡Botón añadido al video!
+                    components: [translateRow] 
                 });
+                
+                await message.suppressEmbeds(true); // Ocultamos el link original para que se vea limpio
             } else {
+                // VIDEO PESADO (>8MB): Usamos Litterbox y el enlace de respaldo VX
                 const form = new FormData();
                 form.append('reqtype', 'fileupload');
                 form.append('time', '24h');
@@ -289,25 +310,30 @@ client.on('messageCreate', async message => {
                     maxContentLength: Infinity
                 });
 
-                socialEmbed.addFields({ name: 'Enlace temporal 24 hrs (Video > 8MB)', value: response.data });
+                // Le agregamos la URL temporal de descarga al Embed
+                socialEmbed.addFields({ name: '⬇️ Descargar Archivo Original (24h)', value: response.data });
+                socialEmbed.setImage(null);
+
                 await processingMsg.edit({
-                    content: ` `,
+                    content: fallbackLink, // ¡Enviamos el enlace vx/tnktok para que el reproductor aparezca!
                     embeds: [socialEmbed],
-                    components: [translateRow] // ¡Botón añadido al Litterbox!
+                    components: [translateRow] 
                 });
+                
+                // IMPORTANTE: Le decimos a Discord que SÍ despliegue el reproductor del fallbackLink
+                await message.suppressEmbeds(false).catch(() => {});
             }
-            
-            await message.suppressEmbeds(true);
 
         } catch (error) {
             console.error(`Error crítico en módulo universal (${link}):`, error.message);
+            // El fallback se activará si falla la conexión total
             await processingMsg.edit("No se pudo extraer el contenido.").catch(() => { });
             setTimeout(() => processingMsg.delete().catch(() => { }), 3000); 
         } finally {
             if (actualFilePath && fs.existsSync(actualFilePath)) {
                 fs.unlinkSync(actualFilePath);
             }
-        } 
+        }
         }
 
     // --- MÓDULO DE EXTRACCIÓN: FACEBOOK ---
