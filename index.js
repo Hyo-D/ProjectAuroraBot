@@ -178,10 +178,10 @@ client.on('messageCreate', async message => {
             let authorName = 'Usuario desconocido';
             let authorAvatar = null;
             let thumbnailUrl = null;
-            let hasVideoToDownload = true; 
-            let isTwitterGif = false; // ✨ NUEVO: Variable para detectar GIFs de Twitter
+            let hasVideoToDownload = true;
+            let isTwitterGif = false; // Variable para detectar si es un GIF
 
-            // ✨ NUEVO: Preparamos los links rápidos (vx/tnktok) por si el video es muy pesado o es un GIF
+            // Preparamos el link convertido (fallback) por si lo necesitamos para GIFs o Videos Pesados
             let fallbackLink = link;
             if (link.includes('tiktok.com')) fallbackLink = link.replace(/(?:www\.)?(?:vm\.|vt\.|v\.)?tiktok\.com/gi, 'tnktok.com');
             else if (link.includes('twitter.com') || link.includes('x.com')) fallbackLink = link.replace(/(?:www\.)?(twitter|x)\.com/gi, 'vxtwitter.com');
@@ -203,18 +203,20 @@ client.on('messageCreate', async message => {
                 const media = data.media_extended || [];
                 const videoMedia = media.find(m => m.type === 'video' || m.type === 'gif');
 
-                // ✨ MODIFICADO: Detectamos si es un GIF específicamente
                 if (videoMedia && videoMedia.type === 'gif') {
+                    // ¡Es un GIF!
                     isTwitterGif = true;
-                    hasVideoToDownload = false; // No usamos yt-dlp, usaremos vxtwitter directamente
+                    hasVideoToDownload = false;
                 } else if (!videoMedia && media.length > 0) {
+                    // ¡Es solo una imagen estática!
                     hasVideoToDownload = false; 
                     thumbnailUrl = media[0].url; 
                 } else if (!videoMedia && media.length === 0) {
+                    // ¡Es solo texto!
                     hasVideoToDownload = false;
                 }
             } else {
-                // Para TikTok e Instagram, yt-dlp sigue siendo rapidísimo extrayendo metadatos
+                // Para TikTok e Instagram, yt-dlp sigue extrayendo metadatos
                 const metadata = await youtubedl(link, { dumpJson: true, noWarnings: true });
                 postText = metadata.title || metadata.description || postText;
                 authorName = metadata.uploader || metadata.creator || authorName;
@@ -227,7 +229,7 @@ client.on('messageCreate', async message => {
                 }
             }
 
-            // 3. ARMAMOS EL EMBED DE ALTA CALIDAD
+            // 3. ARMAMOS EL EMBED DE ALTA CALIDAD (Para fotos/textos o videos ligeros)
             const socialEmbed = new EmbedBuilder()
                 .setColor(embedColor)
                 .setAuthor({ 
@@ -247,23 +249,18 @@ client.on('messageCreate', async message => {
                     .setStyle(ButtonStyle.Secondary)
             );
 
-            // 4. EVALUACIÓN RÁPIDA: ¿Modo Revista, Modo GIF o Modo Video?
+            // 4. EVALUACIÓN RÁPIDA: ¿Modo Revista, GIF o Video?
             if (!hasVideoToDownload) {
                 if (isTwitterGif) {
-                    // ✨ MODO GIF: Quitamos el Embed de Aurora para que Discord deje nacer el reproductor de vx
-                    await processingMsg.edit({ 
-                        content: fallbackLink, 
-                        embeds: [], 
-                        components: [translateRow] 
-                    });
+                    // MODO GIF: Solo el link de vxtwitter, sin nada más
+                    await processingMsg.edit({ content: fallbackLink, embeds: [], components: [] });
                 } else {
-                    // MODO REVISTA: Solo foto o texto
+                    // MODO REVISTA: (Solo foto o texto) Mandamos el Embed de Aurora
                     await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [translateRow] });
                 }
-                
-                // ✨ FIX CARRERA: Esperamos 2 segundos antes de ocultar el embed original para ganarle a Discord
-                setTimeout(() => message.suppressEmbeds(true).catch(() => {}), 2000);
-                return; 
+                // Ocultamos el link del usuario con un pequeño retraso
+                setTimeout(() => message.suppressEmbeds(true).catch(() => {}), 1500); 
+                return; // ¡TERMINAMOS AQUÍ!
             }
 
             // 5. MODO VIDEO: Si llegamos aquí, sí hay video. Lo descargamos.
@@ -294,7 +291,9 @@ client.on('messageCreate', async message => {
                     files: [attachment],
                     components: [translateRow] 
                 });
+                await message.suppressEmbeds(true);
             } else {
+                // MODO VIDEO PESADO: Mandamos el link convertido + link de Litterbox (Sin Embed)
                 const form = new FormData();
                 form.append('reqtype', 'fileupload');
                 form.append('time', '24h');
@@ -306,26 +305,17 @@ client.on('messageCreate', async message => {
                     maxContentLength: Infinity
                 });
 
-                // ✨ FIX VIDEO PESADO: El mensaje principal muestra el reproductor vx
-                await processingMsg.edit({
-                    content: fallbackLink, 
-                    embeds: [], // Vacío para que Discord muestre el video
-                    components: [translateRow] 
-                });
+                const litterboxUrl = response.data;
 
-                // Y mandamos un segundo mensaje en cadena con el Embed de descarga
-                socialEmbed.addFields({ name: '📥 Descargar Archivo (Litterbox)', value: response.data });
-                socialEmbed.setImage(null); 
-                
-                await processingMsg.reply({
-                    content: ` `,
-                    embeds: [socialEmbed],
-                    allowedMentions: { repliedUser: false } // Para que no suene notificación doble
+                await processingMsg.edit({
+                    content: `${fallbackLink}\n\n📥 **Descargar original:** ${litterboxUrl}`,
+                    embeds: [],
+                    components: []
                 });
+                
+                // Retraso para que Discord alcance a leer el fallbackLink antes de ocultar el original
+                setTimeout(() => message.suppressEmbeds(true).catch(() => {}), 1500);
             }
-            
-            // Ocultamos el link feo del mensaje original del usuario (Con 2 segundos de retraso)
-            setTimeout(() => message.suppressEmbeds(true).catch(() => {}), 2000);
 
         } catch (error) {
             console.error(`Error crítico en módulo universal (${link}):`, error.message);
@@ -335,8 +325,8 @@ client.on('messageCreate', async message => {
             if (actualFilePath && fs.existsSync(actualFilePath)) {
                 fs.unlinkSync(actualFilePath);
             }
-        }
-        }
+        } 
+    }
 
     // --- MÓDULO DE EXTRACCIÓN: FACEBOOK ---
     const fbRegex = /https?:\/\/(?:www\.)?facebook\.com\/[^\s]+/gi;
