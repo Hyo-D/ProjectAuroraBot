@@ -1,9 +1,5 @@
 require('dotenv').config();
-<<<<<<< HEAD
 const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder} = require('discord.js');
-=======
-const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, REST, Routes, SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType } = require('discord.js');
->>>>>>> cd012ed4a4db55ae1abfd8ce2f45aa7d69b6a8a1
 const fs = require('fs'); // Para leer archivos y ver su peso
 const path = require('path'); // Para manejar las rutas de los archivos
 const axios = require('axios'); // Para subir a Litterbox
@@ -399,11 +395,7 @@ client.on('messageCreate', async message => {
             if (fileSizeInMB <= 8) {
                 const finalAttachment = new AttachmentBuilder(outputPath);
                 await processingMsg.edit({ 
-<<<<<<< HEAD
                     content: "Gif Generado", 
-=======
-                    content: "Gif Generado, 
->>>>>>> cd012ed4a4db55ae1abfd8ce2f45aa7d69b6a8a1
                     files: [finalAttachment] 
                 });
             } else {
