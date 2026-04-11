@@ -132,8 +132,7 @@ if (interaction.isChatInputCommand()) {
 
                 // 2. LA MAGIA DE FFMPEG
                 // fps=15 (fluido para gifs), scale=500:-1 (ancho de 500px para no exceder los 8MB)
-                const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos" -c:v gif "${outputPath}" -y`;
-                
+const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -c:v gif "${outputPath}" -y`;                
                 await new Promise((resolve, reject) => {
                     exec(ffmpegCmd, (error) => {
                         if (error) reject(error);
@@ -217,8 +216,7 @@ if (interaction.isChatInputCommand()) {
                 await interaction.editReply("Convirtiendo.");
 
                 // 2. LA MAGIA DE FFMPEG (Igual que en el slash command)
-                const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos" -c:v gif "${outputPath}" -y`;
-                
+const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -c:v gif "${outputPath}" -y`;                
                 await new Promise((resolve, reject) => {
                     exec(ffmpegCmd, (error) => {
                         if (error) reject(error);
@@ -320,7 +318,6 @@ if (interaction.isChatInputCommand()) {
 });
 
 
-
 // Escuchar cada mensaje que se envía
 client.on('messageCreate', async message => {
     // Si el mensaje lo envió un bot, lo ignoramos
@@ -331,55 +328,70 @@ client.on('messageCreate', async message => {
 
     // --- SISTEMA CLÁSICO: !togif ---
     if (content.toLowerCase() === '!togif') {
-        let videoAttachment = null;
+        let videoUrl = null;
         const processingMsg = await message.reply("Buscando video...");
 
         // CASO 1: El usuario le dio "Responder" a un mensaje
         if (message.reference && message.reference.messageId) {
             const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
-            videoAttachment = repliedMessage.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+            
+            // Buscamos si hay un adjunto
+            const attachment = repliedMessage.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+            if (attachment) videoUrl = attachment.url;
+            
+            // Si no hay adjunto, buscamos si hay un enlace en el texto
+            if (!videoUrl) {
+                const urlMatch = repliedMessage.content.match(/https?:\/\/[^\s]+/);
+                if (urlMatch) videoUrl = urlMatch[0];
+            }
         } 
         // CASO 2: El usuario solo escribió !togif (Buscamos en los últimos 20 mensajes)
         else {
             const recentMessages = await message.channel.messages.fetch({ limit: 20 });
-            // Buscamos el primer mensaje que contenga un video
-            const msgWithVideo = recentMessages.find(msg => 
-                msg.attachments.some(att => att.contentType && att.contentType.startsWith('video/'))
-            );
             
-            if (msgWithVideo) {
-                videoAttachment = msgWithVideo.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+            for (const msg of recentMessages.values()) {
+                // Prioridad 1: Adjuntos
+                const attachment = msg.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+                if (attachment) {
+                    videoUrl = attachment.url;
+                    break;
+                }
+                // Prioridad 2: Enlaces en el texto
+                const urlMatch = msg.content.match(/https?:\/\/[^\s]+/);
+                if (urlMatch) {
+                    videoUrl = urlMatch[0];
+                    break;
+                }
             }
         }
 
-        // Si después de buscar en ambos casos no hay video, cancelamos
-        if (!videoAttachment) {
-            return processingMsg.edit("No video adjunto valido.");
+        // Si después de buscar no hay nada, cancelamos
+        if (!videoUrl) {
+            return processingMsg.edit("No se encontró ningún video adjunto o enlace válido.");
         }
 
-        const inputPath = path.join(__dirname, `input_pref_${Date.now()}_${videoAttachment.name}`);
+        const inputPath = path.join(__dirname, `input_pref_${Date.now()}_video.mp4`);
         const outputPath = path.join(__dirname, `aurora_pref_${Date.now()}.gif`);
 
         try {
-            await processingMsg.edit("Extrayendo");
+            await processingMsg.edit("Extrayendo video...");
 
-            // 1. Descargamos el video
-            const response = await axios({
-                method: 'GET',
-                url: videoAttachment.url,
-                responseType: 'stream'
-            });
+            // 1. Descargamos el video: Verificamos si es un enlace directo (adjunto) o un enlace a una web
+            if (videoUrl.includes('discordapp.com') || videoUrl.includes('discord.net')) {
+                // Es un archivo subido a Discord, usamos axios
+                const response = await axios({ method: 'GET', url: videoUrl, responseType: 'stream' });
+                const writer = fs.createWriteStream(inputPath);
+                response.data.pipe(writer);
+                await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+            } else {
+                // Es un enlace de web (TikTok, YT, etc.), usamos yt-dlp
+                await youtubedl(videoUrl, { output: inputPath, format: 'w', noWarnings: true });
+            }
 
-            const writer = fs.createWriteStream(inputPath);
-            response.data.pipe(writer);
+            await processingMsg.edit("Convirtiendo...");
 
-            await new Promise((resolve, reject) => {
-                writer.on('finish', resolve);
-                writer.on('error', reject);
-            });
-
-            // 2. MAGIA DE FFMPEG
-            const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos" -c:v gif "${outputPath}" -y`;
+            // 2. MAGIA DE FFMPEG (Con paleta de colores para evitar saturación)
+            const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -c:v gif "${outputPath}" -y`;
             
             await new Promise((resolve, reject) => {
                 exec(ffmpegCmd, (error) => {
@@ -395,11 +407,11 @@ client.on('messageCreate', async message => {
             if (fileSizeInMB <= 8) {
                 const finalAttachment = new AttachmentBuilder(outputPath);
                 await processingMsg.edit({ 
-                    content: "Gif Generado", 
+                    content: "✨ ¡Gif Generado!", 
                     files: [finalAttachment] 
                 });
             } else {
-                await processingMsg.edit("Subiendo a servidor temporal...");
+                await processingMsg.edit("El GIF es mayor a 8MB. Subiendo a servidor temporal...");
                 
                 const form = new FormData();
                 form.append('reqtype', 'fileupload');
@@ -412,18 +424,17 @@ client.on('messageCreate', async message => {
                     maxContentLength: Infinity
                 });
 
-                await processingMsg.edit(`GIF muy pesado, descargalo:\n${uploadRes.data}`);
+                await processingMsg.edit(`✨ GIF muy pesado, descárgalo:\n${uploadRes.data}`);
             }
 
         } catch (error) {
             console.error("Error al crear GIF con !togif:", error);
-            await processingMsg.edit("Ocurrió un error.");
+            await processingMsg.edit("Error al procesar el video.");
         } finally {
             if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
             if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
         }
         
-        // Ponemos un return aquí para que el bot no intente buscar enlaces de redes sociales en el texto "!togif"
         return; 
     }
 
