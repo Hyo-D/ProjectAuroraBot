@@ -20,6 +20,10 @@ const client = new Client({
 // Cuando el bot encienda, nos avisará en la terminal
 client.once('clientReady', () => {
     console.log(`🚂 ¡Project Aurora encendido e iniciado sesión como ${client.user.tag}!`);
+    const servers = client.guilds.cache;
+    servers.forEach(guild => {
+        console.log(` └ 📌 ${guild.name} (👥 ${guild.memberCount} miembros)`);
+    });
 });
 
 
@@ -184,39 +188,43 @@ const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lancz
 
             // Atrapamos el mensaje completo al que el usuario le dio clic derecho
             const targetMessage = interaction.targetMessage;
+            let videoUrl = null;
 
-            // Buscamos si ese mensaje tiene algún archivo adjunto que sea un video
-            const videoAttachment = targetMessage.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
-
-            if (!videoAttachment) {
-                return interaction.editReply("No video adjunto valido");
+            // Buscamos un adjunto
+            const attachment = targetMessage.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+            if (attachment) videoUrl = attachment.url;
+            
+            // Si no hay adjunto, buscamos un enlace
+            if (!videoUrl) {
+                const urlMatch = targetMessage.content.match(/https?:\/\/[^\s]+/);
+                if (urlMatch) videoUrl = urlMatch[0];
             }
 
-            const inputPath = path.join(__dirname, `input_ctx_${Date.now()}_${videoAttachment.name}`);
+            if (!videoUrl) {
+                return interaction.editReply("No se encontró ningún video o enlace válido en este mensaje.");
+            }
+
+            const inputPath = path.join(__dirname, `input_ctx_${Date.now()}_video.mp4`);
             const outputPath = path.join(__dirname, `aurora_ctx_${Date.now()}.gif`);
 
             try {
-                await interaction.editReply("Extrayendo.");
+                await interaction.editReply("Extrayendo video...");
 
-                // 1. Descargamos el video del mensaje original
-                const response = await axios({
-                    method: 'GET',
-                    url: videoAttachment.url,
-                    responseType: 'stream'
-                });
+                // 1. Descargamos el video
+                if (videoUrl.includes('discordapp.com') || videoUrl.includes('discord.net')) {
+                    const response = await axios({ method: 'GET', url: videoUrl, responseType: 'stream' });
+                    const writer = fs.createWriteStream(inputPath);
+                    response.data.pipe(writer);
+                    await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+                } else {
+                    await youtubedl(videoUrl, { output: inputPath, format: 'w', noWarnings: true });
+                }
 
-                const writer = fs.createWriteStream(inputPath);
-                response.data.pipe(writer);
+                await interaction.editReply("Convirtiendo y optimizando...");
 
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
-                    writer.on('error', reject);
-                });
-
-                await interaction.editReply("Convirtiendo.");
-
-                // 2. LA MAGIA DE FFMPEG (Igual que en el slash command)
-const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -c:v gif "${outputPath}" -y`;                
+                // 2. LA MAGIA DE FFMPEG (Alta calidad)
+                const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -c:v gif "${outputPath}" -y`;
+                
                 await new Promise((resolve, reject) => {
                     exec(ffmpegCmd, (error) => {
                         if (error) reject(error);
@@ -231,7 +239,7 @@ const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lancz
                 if (fileSizeInMB <= 8) {
                     const finalAttachment = new AttachmentBuilder(outputPath);
                     await interaction.editReply({ 
-                        content: "Gif Procesado", 
+                        content: "Gif Generado", 
                         files: [finalAttachment] 
                     });
                 } else {
@@ -248,7 +256,7 @@ const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lancz
                         maxContentLength: Infinity
                     });
 
-                    await interaction.editReply(`GIF muy pesado, descargalo: \n${uploadRes.data}`);
+                    await interaction.editReply(`GIF muy pesado, descárgalo: \n${uploadRes.data}`);
                 }
 
             } catch (error) {
@@ -407,7 +415,7 @@ client.on('messageCreate', async message => {
             if (fileSizeInMB <= 8) {
                 const finalAttachment = new AttachmentBuilder(outputPath);
                 await processingMsg.edit({ 
-                    content: "✨ ¡Gif Generado!", 
+                    content: "Gif Generado", 
                     files: [finalAttachment] 
                 });
             } else {
@@ -424,7 +432,7 @@ client.on('messageCreate', async message => {
                     maxContentLength: Infinity
                 });
 
-                await processingMsg.edit(`✨ GIF muy pesado, descárgalo:\n${uploadRes.data}`);
+                await processingMsg.edit(`GIF muy pesado, descárgalo:\n${uploadRes.data}`);
             }
 
         } catch (error) {
