@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, REST, Routes, SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType } = require('discord.js');
 const fs = require('fs'); // Para leer archivos y ver su peso
 const path = require('path'); // Para manejar las rutas de los archivos
 const axios = require('axios'); // Para subir a Litterbox
@@ -27,7 +27,9 @@ client.once('clientReady', () => {
 client.on('interactionCreate', async interaction => {
     
 if (interaction.isChatInputCommand()) {
-        
+    
+    
+
     if (interaction.commandName === 'about') {
         // 1. Cálculos del Bot
         const totalSeconds = interaction.client.uptime / 1000;
@@ -94,6 +96,173 @@ if (interaction.isChatInputCommand()) {
             components: [buttonsRow]
         });
     }
+
+    if (interaction.commandName === 'togif') {
+            // Le pedimos tiempo a Discord porque convertir videos tarda unos segundos
+            await interaction.deferReply(); 
+
+            // Obtenemos el archivo que el usuario subió
+            const videoAttachment = interaction.options.getAttachment('video');
+
+            // Filtro de seguridad: ¿Es realmente un video?
+            if (!videoAttachment.contentType || !videoAttachment.contentType.startsWith('video/')) {
+                return interaction.editReply("❌ Por favor, adjunta un archivo de video válido (mp4, webm, mov).");
+            }
+
+            const inputPath = path.join(__dirname, `input_${Date.now()}_${videoAttachment.name}`);
+            const outputPath = path.join(__dirname, `aurora_output_${Date.now()}.gif`);
+
+            try {
+                // 1. Descargamos el video del mensaje de Discord a nuestro servidor Linux
+                const response = await axios({
+                    method: 'GET',
+                    url: videoAttachment.url,
+                    responseType: 'stream'
+                });
+
+                const writer = fs.createWriteStream(inputPath);
+                response.data.pipe(writer);
+
+                await new Promise((resolve, reject) => {
+                    writer.on('finish', resolve);
+                    writer.on('error', reject);
+                });
+
+                await interaction.editReply("⏳ Procesando fotogramas y optimizando...");
+
+                // 2. LA MAGIA DE FFMPEG
+                // fps=15 (fluido para gifs), scale=500:-1 (ancho de 500px para no exceder los 8MB)
+                const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos" -c:v gif "${outputPath}" -y`;
+                
+                await new Promise((resolve, reject) => {
+                    exec(ffmpegCmd, (error) => {
+                        if (error) reject(error);
+                        else resolve();
+                    });
+                });
+
+                // 3. Pesamos el GIF resultante
+                const stats = fs.statSync(outputPath);
+                const fileSizeInMB = stats.size / (1024 * 1024);
+
+                if (fileSizeInMB <= 8) {
+                    const finalAttachment = new AttachmentBuilder(outputPath);
+                    await interaction.editReply({ 
+                        content: "Gif Generado", 
+                        files: [finalAttachment] 
+                    });
+                } else {
+                    // Si el GIF sigue siendo muy pesado, aplicamos el plan de respaldo de Litterbox
+                    await interaction.editReply("Subiendo a la nube temporal...");
+                    
+                    const form = new FormData();
+                    form.append('reqtype', 'fileupload');
+                    form.append('time', '24h');
+                    form.append('fileToUpload', fs.createReadStream(outputPath));
+
+                    const uploadRes = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
+                        headers: form.getHeaders(),
+                        maxBodyLength: Infinity,
+                        maxContentLength: Infinity
+                    });
+
+                    await interaction.editReply(`GIF muy pesado, pero puedes descargarlo aquí:\n${uploadRes.data}`);
+                }
+
+            } catch (error) {
+                console.error("Error al crear GIF:", error);
+                await interaction.editReply("Error al intentar procesar el GIF.");
+            } finally {
+                // 4. Limpieza absoluta del servidor (borramos el mp4 y el gif original)
+                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+            }
+        }
+
+        if (interaction.isMessageContextMenuCommand()) {
+        if (interaction.commandName === 'Convertir a GIF') {
+            await interaction.deferReply(); 
+
+            // Atrapamos el mensaje completo al que el usuario le dio clic derecho
+            const targetMessage = interaction.targetMessage;
+
+            // Buscamos si ese mensaje tiene algún archivo adjunto que sea un video
+            const videoAttachment = targetMessage.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+
+            if (!videoAttachment) {
+                return interaction.editReply("No video adjunto valido");
+            }
+
+            const inputPath = path.join(__dirname, `input_ctx_${Date.now()}_${videoAttachment.name}`);
+            const outputPath = path.join(__dirname, `aurora_ctx_${Date.now()}.gif`);
+
+            try {
+                await interaction.editReply("Extrayendo.");
+
+                // 1. Descargamos el video del mensaje original
+                const response = await axios({
+                    method: 'GET',
+                    url: videoAttachment.url,
+                    responseType: 'stream'
+                });
+
+                const writer = fs.createWriteStream(inputPath);
+                response.data.pipe(writer);
+
+                await new Promise((resolve, reject) => {
+                    writer.on('finish', resolve);
+                    writer.on('error', reject);
+                });
+
+                await interaction.editReply("Convirtiendo.");
+
+                // 2. LA MAGIA DE FFMPEG (Igual que en el slash command)
+                const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos" -c:v gif "${outputPath}" -y`;
+                
+                await new Promise((resolve, reject) => {
+                    exec(ffmpegCmd, (error) => {
+                        if (error) reject(error);
+                        else resolve();
+                    });
+                });
+
+                // 3. Revisión de peso y envío
+                const stats = fs.statSync(outputPath);
+                const fileSizeInMB = stats.size / (1024 * 1024);
+
+                if (fileSizeInMB <= 8) {
+                    const finalAttachment = new AttachmentBuilder(outputPath);
+                    await interaction.editReply({ 
+                        content: "Gif Procesado", 
+                        files: [finalAttachment] 
+                    });
+                } else {
+                    await interaction.editReply("Subiendo a servidor temporal...");
+                    
+                    const form = new FormData();
+                    form.append('reqtype', 'fileupload');
+                    form.append('time', '24h');
+                    form.append('fileToUpload', fs.createReadStream(outputPath));
+
+                    const uploadRes = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
+                        headers: form.getHeaders(),
+                        maxBodyLength: Infinity,
+                        maxContentLength: Infinity
+                    });
+
+                    await interaction.editReply(`GIF muy pesado, descargalo: \n${uploadRes.data}`);
+                }
+
+            } catch (error) {
+                console.error("Error al crear GIF desde contexto:", error);
+                await interaction.editReply("Ocurrió un error al procesar el video.");
+            } finally {
+                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+            }
+        }
+    }
+
     }
 
     // --- SISTEMA DE BOTONES INTERACTIVOS ---
@@ -141,7 +310,7 @@ if (interaction.isChatInputCommand()) {
                 console.error("Error al traducir:", error.message);
                 // Si falla, le mandamos un mensaje invisible solo al usuario que dio clic
                 await interaction.followUp({ 
-                    content: "❌ Hubo un error al intentar traducir el texto. Intenta de nuevo más tarde.", 
+                    content: "Hubo un error al intentar traducir el texto. Intenta de nuevo más tarde.", 
                     ephemeral: true 
                 });
             }
@@ -159,6 +328,104 @@ client.on('messageCreate', async message => {
 
     const content = message.content;
     let linksToFix = [];
+
+    // --- SISTEMA CLÁSICO: !togif ---
+    if (content.toLowerCase() === '!togif') {
+        let videoAttachment = null;
+        const processingMsg = await message.reply("Buscando video...");
+
+        // CASO 1: El usuario le dio "Responder" a un mensaje
+        if (message.reference && message.reference.messageId) {
+            const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
+            videoAttachment = repliedMessage.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+        } 
+        // CASO 2: El usuario solo escribió !togif (Buscamos en los últimos 20 mensajes)
+        else {
+            const recentMessages = await message.channel.messages.fetch({ limit: 20 });
+            // Buscamos el primer mensaje que contenga un video
+            const msgWithVideo = recentMessages.find(msg => 
+                msg.attachments.some(att => att.contentType && att.contentType.startsWith('video/'))
+            );
+            
+            if (msgWithVideo) {
+                videoAttachment = msgWithVideo.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
+            }
+        }
+
+        // Si después de buscar en ambos casos no hay video, cancelamos
+        if (!videoAttachment) {
+            return processingMsg.edit("No video adjunto valido.");
+        }
+
+        const inputPath = path.join(__dirname, `input_pref_${Date.now()}_${videoAttachment.name}`);
+        const outputPath = path.join(__dirname, `aurora_pref_${Date.now()}.gif`);
+
+        try {
+            await processingMsg.edit("Extrayendo");
+
+            // 1. Descargamos el video
+            const response = await axios({
+                method: 'GET',
+                url: videoAttachment.url,
+                responseType: 'stream'
+            });
+
+            const writer = fs.createWriteStream(inputPath);
+            response.data.pipe(writer);
+
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
+
+            // 2. MAGIA DE FFMPEG
+            const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos" -c:v gif "${outputPath}" -y`;
+            
+            await new Promise((resolve, reject) => {
+                exec(ffmpegCmd, (error) => {
+                    if (error) reject(error);
+                    else resolve();
+                });
+            });
+
+            // 3. Revisión de peso
+            const stats = fs.statSync(outputPath);
+            const fileSizeInMB = stats.size / (1024 * 1024);
+
+            if (fileSizeInMB <= 8) {
+                const finalAttachment = new AttachmentBuilder(outputPath);
+                await processingMsg.edit({ 
+                    content: "Gif Generado, 
+                    files: [finalAttachment] 
+                });
+            } else {
+                await processingMsg.edit("Subiendo a servidor temporal...");
+                
+                const form = new FormData();
+                form.append('reqtype', 'fileupload');
+                form.append('time', '24h');
+                form.append('fileToUpload', fs.createReadStream(outputPath));
+
+                const uploadRes = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
+                    headers: form.getHeaders(),
+                    maxBodyLength: Infinity,
+                    maxContentLength: Infinity
+                });
+
+                await processingMsg.edit(`GIF muy pesado, descargalo:\n${uploadRes.data}`);
+            }
+
+        } catch (error) {
+            console.error("Error al crear GIF con !togif:", error);
+            await processingMsg.edit("Ocurrió un error.");
+        } finally {
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        }
+        
+        // Ponemos un return aquí para que el bot no intente buscar enlaces de redes sociales en el texto "!togif"
+        return; 
+    }
 
     // --- MÓDULO UNIVERSAL: TIKTOK, X, INSTAGRAM ---
     const socialRegex = /https?:\/\/(?:www\.)?(?:vm\.|vt\.|v\.)?(?:tiktok\.com|twitter\.com|x\.com|instagram\.com)\/[^\s]+/gi;
