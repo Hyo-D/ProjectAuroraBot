@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, REST, Routes, SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder} = require('discord.js');
 const fs = require('fs'); // Para leer archivos y ver su peso
 const path = require('path'); // Para manejar las rutas de los archivos
 const axios = require('axios'); // Para subir a Litterbox
