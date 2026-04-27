@@ -1,42 +1,36 @@
 require('dotenv').config();
-const { REST, Routes, SlashCommandBuilder, ContextMenuCommandBuilder, ApplicationCommandType } = require('discord.js');
+const { REST, Routes } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-// 1. Construimos los "planos" de los comandos (Tu código)
-const commands = [
-    new SlashCommandBuilder()
-        .setName('about')
-        .setDescription('Muestra la información general del bot y del creador.'),
+const commands = [];
+const commandsPath = path.join(__dirname, 'src', 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-    new SlashCommandBuilder()
-        .setName('togif')
-        .setDescription('Convierte un video corto en un archivo GIF optimizado.')
-        .addAttachmentOption(option =>
-            option.setName('video')
-                .setDescription('Sube el archivo de video que quieres convertir')
-                .setRequired(true)
-        ),
+// Lee todos los archivos en la carpeta commands automáticamente
+for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    const command = require(filePath);
+    if ('data' in command && 'execute' in command) {
+        commands.push(command.data.toJSON());
+    } else {
+        console.log(`[ADVERTENCIA] El comando en ${filePath} no tiene la propiedad "data" o "execute".`);
+    }
+}
 
-    new ContextMenuCommandBuilder()
-        .setName('Convertir a GIF')
-        .setType(ApplicationCommandType.Message)
-].map(command => command.toJSON());
-
-// 2. Preparamos el módulo de conexión con el Token de Project Aurora
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-// 3. Ejecutamos la subida de los comandos a la API de Discord
 (async () => {
     try {
-        console.log(`⏳ Empezando a actualizar ${commands.length} comandos (Slash y Menú de Contexto)...`);
+        console.log(`Sincronizando ${commands.length} comandos con la API de Discord...`);
 
-        // Usamos applicationCommands para registrar los comandos GLOBALMENTE
         const data = await rest.put(
             Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands },
         );
 
-        console.log(`✅ ¡Éxito absoluto! ${data.length} comandos registrados correctamente en Discord.`);
+        console.log(`Proceso completado. ${data.length} comandos registrados con éxito.`);
     } catch (error) {
-        console.error("❌ Hubo un error crítico al registrar los comandos:", error);
+        console.error("Error crítico durante la sincronización de comandos:", error);
     }
 })();
