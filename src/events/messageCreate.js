@@ -25,7 +25,7 @@ module.exports = {
                 const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
                 const attachment = repliedMessage.attachments.find(att => att.contentType && att.contentType.startsWith('video/'));
                 if (attachment) videoUrl = attachment.url;
-                
+
                 if (!videoUrl) {
                     const urlMatch = repliedMessage.content.match(/https?:\/\/[^\s]+/);
                     if (urlMatch) videoUrl = urlMatch[0];
@@ -68,7 +68,7 @@ module.exports = {
                 await processingMsg.edit("Procesando fotogramas y optimizando formato...");
 
                 const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "fps=15,scale=500:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -c:v gif "${outputPath}" -y`;
-                
+
                 await new Promise((resolve, reject) => {
                     exec(ffmpegCmd, (error) => {
                         if (error) reject(error);
@@ -81,13 +81,13 @@ module.exports = {
 
                 if (fileSizeInMB <= 8) {
                     const finalAttachment = new AttachmentBuilder(outputPath);
-                    await processingMsg.edit({ 
-                        content: "Conversión finalizada.", 
-                        files: [finalAttachment] 
+                    await processingMsg.edit({
+                        content: "Conversión finalizada.",
+                        files: [finalAttachment]
                     });
                 } else {
                     await processingMsg.edit("El archivo resultante excede el límite de 8MB. Transfiriendo a servidor temporal...");
-                    
+
                     const form = new FormData();
                     form.append('reqtype', 'fileupload');
                     form.append('time', '24h');
@@ -109,156 +109,132 @@ module.exports = {
                 if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
                 if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
             }
-            
-            return; 
+
+            return;
         }
 
-        // --------------------------------------------------
-        // 2. MÓDULO UNIVERSAL: TIKTOK, X, INSTAGRAM
+       // --------------------------------------------------
+        // 2. MÓDULO UNIVERSAL: TIKTOK, X, INSTAGRAM (Botón Dinámico)
         // --------------------------------------------------
         const socialRegex = /https?:\/\/(?:www\.)?(?:vm\.|vt\.|v\.)?(?:tiktok\.com|twitter\.com|x\.com|instagram\.com)\/[^\s]+/gi;
         const socialMatches = content.match(socialRegex);
 
         if (socialMatches) {
             const link = socialMatches[0];
-            const processingMsg = await message.reply("Procesando enlace...");
-            let actualFilePath = null;
+            const processingMsg = await message.reply("Analizando contenido...");
 
             try {
-                let embedColor = '#2F3136'; 
-                let platformName = 'Red Social';
-                let postText = 'Sin descripción';
-                let authorName = 'Usuario desconocido';
-                let authorAvatar = null;
-                let thumbnailUrl = null;
-                let hasVideoToDownload = true;
-                let isTwitterGif = false; 
+                const buttons = [];
+                let isTwitter = link.includes('twitter.com') || link.includes('x.com');
+                let isTikTok = link.includes('tiktok.com');
+                let isInstagram = link.includes('instagram.com');
 
-                let fallbackLink = link;
-                if (link.includes('tiktok.com')) fallbackLink = link.replace(/(?:www\.)?(?:vm\.|vt\.|v\.)?tiktok\.com/gi, 'tnktok.com');
-                else if (link.includes('twitter.com') || link.includes('x.com')) fallbackLink = link.replace(/(?:www\.)?(twitter|x)\.com/gi, 'vxtwitter.com');
-                else if (link.includes('instagram.com')) fallbackLink = link.replace(/(?:www\.)?instagram\.com/gi, 'vxinstagram.com');
+                // 1. CASO DE X / TWITTER
+                if (isTwitter) {
+                    const fallbackLink = link.replace(/(?:www\.)?(twitter|x)\.com/gi, 'fxtwitter.com');
+                    let hasVideo = false;
 
-                if (link.includes('twitter.com') || link.includes('x.com')) {
-                    embedColor = '#1DA1F2'; 
-                    platformName = 'X (Twitter)';
-                    
-                    const apiUrl = link.replace(/(?:www\.)?(?:twitter|x)\.com/gi, 'api.vxtwitter.com').split('?')[0];
-                    const res = await axios.get(apiUrl);
-                    const data = res.data;
+                    try {
+                        // Consulta rápida a la API de fxTwitter para verificar multimedia
+                        const apiUrl = link.replace(/(?:www\.)?(?:twitter|x)\.com/gi, 'api.fxtwitter.com').split('?')[0];
+                        const res = await axios.get(apiUrl);
+                        const tweetData = res.data.tweet || res.data;
 
-                    postText = data.text || postText;
-                    authorName = `${data.user_name} (@${data.user_screen_name})`;
-                    authorAvatar = data.user_profile_image_url;
-
-                    const media = data.media_extended || [];
-                    const videoMedia = media.find(m => m.type === 'video' || m.type === 'gif');
-
-                    if (videoMedia && videoMedia.type === 'gif') {
-                        isTwitterGif = true;
-                        hasVideoToDownload = false;
-                    } else if (!videoMedia && media.length > 0) {
-                        hasVideoToDownload = false; 
-                        thumbnailUrl = media[0].url; 
-                    } else if (!videoMedia && media.length === 0) {
-                        hasVideoToDownload = false;
+                        if (tweetData) {
+                            const media = tweetData.media?.all || [];
+                            // Verificamos si hay algún elemento tipo video o gif
+                            hasVideo = media.some(m => m.type === 'video' || m.type === 'gif');
+                        }
+                    } catch (apiError) {
+                        console.error("[Aviso] Falló la API de fxTwitter al comprobar video:", apiError.message);
+                        // Fallback seguro: si la API falla, asumimos que podría ser video para no romper el flujo
+                        hasVideo = true; 
                     }
-                } else {
+
+                    buttons.push(
+                        new ButtonBuilder()
+                            .setCustomId(`translate_fx|${link}`)
+                            .setLabel('Traducir')
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                    if (hasVideo) {
+                        buttons.push(
+                            new ButtonBuilder()
+                                .setCustomId('download_social_content')
+                                .setLabel('Descargar')
+                                .setStyle(ButtonStyle.Primary)
+                                .setEmoji('📥')
+                        );
+                    }
+
+                    const actionRow = new ActionRowBuilder().addComponents(buttons);
+                    await processingMsg.edit({ content: fallbackLink, components: [actionRow] });
+                }
+
+                // 2. CASOS DE TIKTOK E INSTAGRAM
+                if (isTikTok || isInstagram) {
+                    let fallbackLink = link;
+                    if (isTikTok) fallbackLink = link.replace(/(?:www\.)?(?:vm\.|vt\.|v\.)?tiktok\.com/gi, 'tnktok.com');
+                    else if (isInstagram) fallbackLink = link.replace(/(?:www\.)?instagram\.com/gi, 'vxinstagram.com');
+
+                    // Obtenemos los metadatos JSON rápidamente a través de yt-dlp
                     const metadata = await youtubedl(link, { dumpJson: true, noWarnings: true });
-                    postText = metadata.title || metadata.description || postText;
-                    authorName = metadata.uploader || metadata.creator || authorName;
-                    thumbnailUrl = metadata.thumbnail;
-
-                    if (link.includes('tiktok.com')) {
-                        embedColor = '#000000'; platformName = 'TikTok';
-                    } else if (link.includes('instagram.com')) {
-                        embedColor = '#E1306C'; platformName = 'Instagram';
-                    }
-                }
-
-                const socialEmbed = new EmbedBuilder()
-                    .setColor(embedColor)
-                    .setAuthor({ 
-                        name: `${authorName} en ${platformName}`, 
-                        iconURL: authorAvatar || undefined 
-                    })
-                    .setDescription(`> ${postText.substring(0, 4000)}`) 
-                    .setFooter({ text: 'Project Aurora' });
-
-                if (thumbnailUrl) socialEmbed.setImage(thumbnailUrl);
-
-                const translateRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('translate_post')
-                        .setLabel('Traducir')
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-                if (!hasVideoToDownload) {
-                    if (isTwitterGif) {
-                        await processingMsg.edit({ content: fallbackLink, embeds: [], components: [] });
-                    } else {
-                        await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [translateRow] });
-                    }
-                    setTimeout(() => message.suppressEmbeds(true).catch(() => {}), 1500); 
-                    return; 
-                }
-
-                const baseName = `aurora_social_${Date.now()}`;
-                const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
-
-                await youtubedl(link, { output: outputTemplate, noWarnings: true });
-
-                const files = fs.readdirSync(__dirname);
-                const downloadedFileName = files.find(file => file.startsWith(baseName));
-
-                if (!downloadedFileName) throw new Error("Error en la descarga del archivo de video.");
-
-                actualFilePath = path.join(__dirname, downloadedFileName);
-                const stats = fs.statSync(actualFilePath);
-                const fileSizeInMB = stats.size / (1024 * 1024);
-
-                if (fileSizeInMB <= 8) {
-                    socialEmbed.setImage(null);
-                    const attachment = new AttachmentBuilder(actualFilePath);
-                    await processingMsg.edit({
-                        content: ` `,
-                        embeds: [socialEmbed],
-                        files: [attachment],
-                        components: [translateRow] 
-                    });
-                    await message.suppressEmbeds(true);
-                } else {
-                    const form = new FormData();
-                    form.append('reqtype', 'fileupload');
-                    form.append('time', '24h');
-                    form.append('fileToUpload', fs.createReadStream(actualFilePath));
-
-                    const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
-                        headers: form.getHeaders(),
-                        maxBodyLength: Infinity,
-                        maxContentLength: Infinity
-                    });
-
-                    await processingMsg.edit({
-                        content: `${fallbackLink}\n\nEnlace de descarga original:\n${response.data}`,
-                        embeds: [],
-                        components: []
-                    });
                     
-                    setTimeout(() => message.suppressEmbeds(true).catch(() => {}), 1500);
+                    // yt-dlp define de forma clara si tiene codecs de video asignados o una duración real
+                    const hasVideo = metadata.duration > 0 || (metadata.vcodec && metadata.vcodec !== 'none');
+
+                    if (hasVideo) {
+                        buttons.push(
+                            new ButtonBuilder()
+                                .setCustomId('download_social_content')
+                                .setLabel('Descargar')
+                                .setStyle(ButtonStyle.Primary)
+                                .setEmoji('📥')
+                        );
+                    }
+
+                    // Si es Instagram, seguimos usando tu estructura de Embed tradicional
+                    if (isInstagram) {
+                        const socialEmbed = new EmbedBuilder()
+                            .setColor('#E1306C')
+                            .setAuthor({ name: `${metadata.uploader || metadata.creator || 'Usuario'} en Instagram` })
+                            .setURL(fallbackLink)
+                            .setDescription(`> ${(metadata.title || metadata.description || 'Sin descripción').substring(0, 4000)}`)
+                            .setFooter({ text: 'Project Aurora' });
+
+                        if (metadata.thumbnail) socialEmbed.setImage(metadata.thumbnail);
+
+                        if (buttons.length > 0) {
+                            const actionRow = new ActionRowBuilder().addComponents(buttons);
+                            await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [actionRow] });
+                        } else {
+                            await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [] }); // Sin botones si es solo foto
+                        }
+                    } 
+                    // Si es TikTok, enviamos el enlace limpio de tiktxk
+                    else if (isTikTok) {
+                        if (buttons.length > 0) {
+                            const actionRow = new ActionRowBuilder().addComponents(buttons);
+                            await processingMsg.edit({ content: fallbackLink, components: [actionRow] });
+                        } else {
+                            await processingMsg.edit({ content: fallbackLink, components: [] }); // Sin botones si es una galería de fotos estática
+                        }
+                    }
                 }
+
+                // Ocultar previsualización original del usuario
+                setTimeout(() => message.suppressEmbeds(true).catch(() => { }), 1500);
+                return;
 
             } catch (error) {
-                console.error(`[Error Universal] ${link}:`, error.message);
-                await processingMsg.edit("Fallo en la extracción del contenido provisto.").catch(() => { });
-                setTimeout(() => processingMsg.delete().catch(() => { }), 3000); 
-            } finally {
-                if (actualFilePath && fs.existsSync(actualFilePath)) fs.unlinkSync(actualFilePath);
-            } 
+                console.error(`[Error Comprobación Multimedia] ${link}:`, error.message);
+                await processingMsg.edit("Fallo al verificar el contenido del enlace provisto.").catch(() => { });
+                setTimeout(() => processingMsg.delete().catch(() => { }), 3000);
+            }
         }
 
-       // --------------------------------------------------
+        // --------------------------------------------------
         // 3. MÓDULO DE EXTRACCIÓN: FACEBOOK
         // --------------------------------------------------
         const fbRegex = /https?:\/\/(?:www\.)?facebook\.com\/[^\s]+/gi;
@@ -274,8 +250,8 @@ module.exports = {
                 fbLink.includes('/watch/') ||
                 fbLink.includes('video.php');
 
-            if (!isDownloadable) return; 
-            
+            if (!isDownloadable) return;
+
             // Si es un enlace de Watch, validamos estrictamente que contenga un ID de video
             if (fbLink.includes('/watch/') && !fbLink.includes('?v=')) {
                 return; // Ignoramos silenciosamente si es la página principal de Watch sin video
@@ -294,12 +270,12 @@ module.exports = {
                 if (fileSizeInMB <= 8) {
                     const attachment = new AttachmentBuilder(filePath);
                     await processingMsg.edit({ content: ` `, files: [attachment] });
-                    await message.suppressEmbeds(true);
+                    await message.suppressEmbeds(true).catch(() => {});
                 } else {
                     await processingMsg.edit("El archivo excede los 8MB. Transfiriendo a servidor temporal...");
                     const form = new FormData();
                     form.append('reqtype', 'fileupload');
-                    form.append('time', '24h'); 
+                    form.append('time', '24h');
                     form.append('fileToUpload', fs.createReadStream(filePath));
 
                     const response = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', form, {
@@ -309,7 +285,7 @@ module.exports = {
                     });
 
                     await processingMsg.edit(`Archivo extraído con éxito (Expira en 24h):\n${response.data}`);
-                    await message.suppressEmbeds(true);
+                    await message.suppressEmbeds(true).catch(() => {});
                 }
             } catch (error) {
                 console.error("[Error Facebook]:", error.message);
@@ -331,7 +307,7 @@ module.exports = {
 
             const baseName = `aurora_pin_${Date.now()}`;
             const outputTemplate = path.join(__dirname, `${baseName}.%(ext)s`);
-            let actualFilePath = null; 
+            let actualFilePath = null;
 
             try {
                 await youtubedl(pinLink, {
@@ -353,7 +329,7 @@ module.exports = {
                 if (fileSizeInMB <= 8) {
                     const attachment = new AttachmentBuilder(actualFilePath);
                     await processingMsg.edit({ content: ` `, files: [attachment] });
-                    await message.suppressEmbeds(true);
+                    await message.suppressEmbeds(true).catch(() => {});
                 } else {
                     await processingMsg.edit("El archivo excede los 8MB. Transfiriendo a servidor temporal...");
                     const form = new FormData();
@@ -368,7 +344,7 @@ module.exports = {
                     });
 
                     await processingMsg.edit(`Archivo extraído con éxito (Expira en 24h):\n${response.data}`);
-                    await message.suppressEmbeds(true);
+                    await message.suppressEmbeds(true).catch(() => {});
                 }
 
             } catch (error) {
@@ -386,7 +362,7 @@ module.exports = {
 
                     if (imageMatch && imageMatch[0]) {
                         await processingMsg.edit({ content: ` `, files: [imageMatch[0]] });
-                        await message.suppressEmbeds(true);
+                        await message.suppressEmbeds(true).catch(() => {});
                     } else {
                         console.log("[Error Pinterest] Axios no encontró enlaces de imágenes válidos.");
                         await processingMsg.delete().catch(() => { });
