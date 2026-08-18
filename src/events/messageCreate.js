@@ -178,11 +178,17 @@ module.exports = {
                     if (isTikTok) fallbackLink = link.replace(/(?:www\.)?(?:vm\.|vt\.|v\.)?tiktok\.com/gi, 'tnktok.com');
                     else if (isInstagram) fallbackLink = link.replace(/(?:www\.)?instagram\.com/gi, 'vxinstagram.com');
 
-                    // Obtenemos los metadatos JSON rápidamente a través de yt-dlp
-                    const metadata = await youtubedl(link, { dumpJson: true, noWarnings: true });
-                    
-                    // yt-dlp define de forma clara si tiene codecs de video asignados o una duración real
-                    const hasVideo = metadata.duration > 0 || (metadata.vcodec && metadata.vcodec !== 'none');
+                    let metadata = null;
+                    let hasVideo = false;
+
+                    try {
+                        // Obtenemos los metadatos JSON en un bloque aislado a prueba de fallos
+                        metadata = await youtubedl(link, { dumpJson: true, noWarnings: true });
+                        // yt-dlp define de forma clara si tiene codecs de video asignados o una duración real
+                        hasVideo = metadata.duration > 0 || (metadata.vcodec && metadata.vcodec !== 'none');
+                    } catch (metaError) {
+                        console.log(`[Aviso] yt-dlp no pudo extraer metadatos de ${link}. Usando enlace de respaldo nativo.`);
+                    }
 
                     if (hasVideo) {
                         buttons.push(
@@ -194,8 +200,11 @@ module.exports = {
                         );
                     }
 
-                    // Si es Instagram, seguimos usando tu estructura de Embed tradicional
-                    if (isInstagram) {
+                    // Preparamos los componentes asegurándonos de no enviar arrays vacíos de ActionRow
+                    const componentsToSend = buttons.length > 0 ? [new ActionRowBuilder().addComponents(buttons)] : [];
+
+                    // Si es Instagram y SÍ logramos obtener la data, usamos tu estructura de Embed tradicional
+                    if (isInstagram && metadata) {
                         const socialEmbed = new EmbedBuilder()
                             .setColor('#E1306C')
                             .setAuthor({ name: `${metadata.uploader || metadata.creator || 'Usuario'} en Instagram` })
@@ -205,21 +214,11 @@ module.exports = {
 
                         if (metadata.thumbnail) socialEmbed.setImage(metadata.thumbnail);
 
-                        if (buttons.length > 0) {
-                            const actionRow = new ActionRowBuilder().addComponents(buttons);
-                            await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [actionRow] });
-                        } else {
-                            await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: [] }); // Sin botones si es solo foto
-                        }
+                        await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: componentsToSend });
                     } 
-                    // Si es TikTok, enviamos el enlace limpio de tiktxk
-                    else if (isTikTok) {
-                        if (buttons.length > 0) {
-                            const actionRow = new ActionRowBuilder().addComponents(buttons);
-                            await processingMsg.edit({ content: fallbackLink, components: [actionRow] });
-                        } else {
-                            await processingMsg.edit({ content: fallbackLink, components: [] }); // Sin botones si es una galería de fotos estática
-                        }
+                    // Si es TikTok, o si es Instagram pero yt-dlp falló, enviamos el enlace limpio
+                    else {
+                        await processingMsg.edit({ content: fallbackLink, embeds: [], components: componentsToSend });
                     }
                 }
 
