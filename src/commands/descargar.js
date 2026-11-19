@@ -28,7 +28,7 @@ module.exports = {
 
     async execute(interaction) {
         // Efímero: solo lo ve quien lo usó (cámbialo si quieres que lo vea el otro usuario)
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        await interaction.deferReply();
 
         const target = interaction.targetMessage;
 
