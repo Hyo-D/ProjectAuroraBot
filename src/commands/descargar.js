@@ -6,57 +6,52 @@ const {
     MessageFlags
 } = require('discord.js');
 const fs = require('fs');
-const { downloadAndPrepareSocialVideo } = require('../services/videoService');
+const { buildSocialReply } = require('../services/socialService');
 
 const supportedRegex = /https?:\/\/(?:[a-z0-9-]+\.)*(?:tiktok\.com|twitter\.com|x\.com|fxtwitter\.com|vxtwitter\.com|instagram\.com|vxinstagram\.com|facebook\.com|pinterest\.[a-z.]+|pin\.it)\/[^\s]+/i;
 
 module.exports = {
     data: new ContextMenuCommandBuilder()
-        .setName('Descargar')
+        .setName('Procesar Enlace')
         .setType(ApplicationCommandType.Message)
-        // Dónde se puede instalar: en servidores y en cuentas de usuario
-        .setIntegrationTypes(
-            ApplicationIntegrationType.GuildInstall,
-            ApplicationIntegrationType.UserInstall
-        )
-        // Dónde aparece: servidores, DM con el bot y DMs/grupos privados
-        .setContexts(
-            InteractionContextType.Guild,
-            InteractionContextType.BotDM,
-            InteractionContextType.PrivateChannel
-        ),
+        .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
+        .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel),
 
     async execute(interaction) {
-        // Efímero: solo lo ve quien lo usó (cámbialo si quieres que lo vea el otro usuario)
+        // Público: así el resultado (embed + botones) lo ven ambos en el DM
         await interaction.deferReply();
 
         const target = interaction.targetMessage;
-
-        // Buscar el link en el contenido y, si no hay, en los embeds
-        let link = target.content?.match(supportedRegex)?.[0];
-        if (!link) {
-            const embedUrl = target.embeds?.find(e => e.url && supportedRegex.test(e.url))?.url;
-            if (embedUrl) link = embedUrl;
-        }
+        let link = target.content?.match(supportedRegex)?.[0]
+            || target.embeds?.find(e => e.url && supportedRegex.test(e.url))?.url;
 
         if (!link) {
-            return interaction.editReply("No encontré ningún enlace compatible (TikTok, X, Instagram, Facebook o Pinterest) en este mensaje.");
+            return interaction.editReply({
+                content: "No encontré ningún enlace compatible en este mensaje.",
+                flags: MessageFlags.Ephemeral
+            });
         }
 
-        link = link.replace(/[.,;!?)]+$/, '');
+        // Si ya venía como fxtwitter/vxtwitter/etc., lo normalizamos al dominio original
+        link = link
+            .replace(/(?:fx|vx)twitter\.com/i, 'twitter.com')
+            .replace(/vxinstagram\.com/i, 'instagram.com')
+            .replace(/tnktok\.com/i, 'tiktok.com');
 
-        let pathToClean = null;
+        let cleanupPath = null;
         try {
-            await interaction.editReply("📥 Extrayendo y descargando el archivo multimedia...");
-            const result = await downloadAndPrepareSocialVideo(link);
-            pathToClean = result.actualFilePath;
+            const result = await buildSocialReply(link);
+            if (!result) {
+                return interaction.editReply("Ese enlace no tiene contenido que pueda procesar.");
+            }
+            cleanupPath = result.cleanupPath;
             await interaction.editReply(result.payload);
         } catch (error) {
-            console.error("[Error /Descargar]:", error.message);
-            await interaction.editReply("No pude descargar el contenido de ese enlace.");
+            console.error("[Error Descargar]:", error.message);
+            await interaction.editReply("No pude procesar el contenido de ese enlace.");
         } finally {
-            if (pathToClean && fs.existsSync(pathToClean)) {
-                try { fs.unlinkSync(pathToClean); } catch {}
+            if (cleanupPath && fs.existsSync(cleanupPath)) {
+                try { fs.unlinkSync(cleanupPath); } catch {}
             }
         }
     },
