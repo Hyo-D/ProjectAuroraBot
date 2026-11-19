@@ -113,7 +113,7 @@ module.exports = {
             return;
         }
 
-       // --------------------------------------------------
+        // --------------------------------------------------
         // 2. MÓDULO UNIVERSAL: TIKTOK, X, INSTAGRAM (Botón Dinámico)
         // --------------------------------------------------
         const socialRegex = /https?:\/\/(?:www\.)?(?:vm\.|vt\.|v\.)?(?:tiktok\.com|twitter\.com|x\.com|instagram\.com)\/[^\s]+/gi;
@@ -148,7 +148,7 @@ module.exports = {
                     } catch (apiError) {
                         console.error("[Aviso] Falló la API de fxTwitter al comprobar video:", apiError.message);
                         // Fallback seguro: si la API falla, asumimos que podría ser video para no romper el flujo
-                        hasVideo = true; 
+                        hasVideo = true;
                     }
 
                     buttons.push(
@@ -156,6 +156,14 @@ module.exports = {
                             .setCustomId(`translate_fx|${link}`)
                             .setLabel('Traducir')
                             .setStyle(ButtonStyle.Secondary)
+                    );
+
+                    buttons.push(
+                        new ButtonBuilder()
+                            .setCustomId('switch_embed_twitter')
+                            .setLabel('Usar vxtwitter')
+                            .setStyle(ButtonStyle.Secondary)
+                            .setEmoji('🔄')
                     );
 
                     if (hasVideo) {
@@ -215,7 +223,7 @@ module.exports = {
                         if (metadata.thumbnail) socialEmbed.setImage(metadata.thumbnail);
 
                         await processingMsg.edit({ content: ` `, embeds: [socialEmbed], components: componentsToSend });
-                    } 
+                    }
                     // Si es TikTok, o si es Instagram pero yt-dlp falló, enviamos el enlace limpio
                     else {
                         await processingMsg.edit({ content: fallbackLink, embeds: [], components: componentsToSend });
@@ -269,7 +277,7 @@ module.exports = {
                 if (fileSizeInMB <= 8) {
                     const attachment = new AttachmentBuilder(filePath);
                     await processingMsg.edit({ content: ` `, files: [attachment] });
-                    await message.suppressEmbeds(true).catch(() => {});
+                    await message.suppressEmbeds(true).catch(() => { });
                 } else {
                     await processingMsg.edit("El archivo excede los 8MB. Transfiriendo a servidor temporal...");
                     const form = new FormData();
@@ -284,7 +292,7 @@ module.exports = {
                     });
 
                     await processingMsg.edit(`Archivo extraído con éxito (Expira en 24h):\n${response.data}`);
-                    await message.suppressEmbeds(true).catch(() => {});
+                    await message.suppressEmbeds(true).catch(() => { });
                 }
             } catch (error) {
                 console.error("[Error Facebook]:", error.message);
@@ -328,7 +336,7 @@ module.exports = {
                 if (fileSizeInMB <= 8) {
                     const attachment = new AttachmentBuilder(actualFilePath);
                     await processingMsg.edit({ content: ` `, files: [attachment] });
-                    await message.suppressEmbeds(true).catch(() => {});
+                    await message.suppressEmbeds(true).catch(() => { });
                 } else {
                     await processingMsg.edit("El archivo excede los 8MB. Transfiriendo a servidor temporal...");
                     const form = new FormData();
@@ -343,7 +351,7 @@ module.exports = {
                     });
 
                     await processingMsg.edit(`Archivo extraído con éxito (Expira en 24h):\n${response.data}`);
-                    await message.suppressEmbeds(true).catch(() => {});
+                    await message.suppressEmbeds(true).catch(() => { });
                 }
 
             } catch (error) {
@@ -361,7 +369,7 @@ module.exports = {
 
                     if (imageMatch && imageMatch[0]) {
                         await processingMsg.edit({ content: ` `, files: [imageMatch[0]] });
-                        await message.suppressEmbeds(true).catch(() => {});
+                        await message.suppressEmbeds(true).catch(() => { });
                     } else {
                         console.log("[Error Pinterest] Axios no encontró enlaces de imágenes válidos.");
                         await processingMsg.delete().catch(() => { });

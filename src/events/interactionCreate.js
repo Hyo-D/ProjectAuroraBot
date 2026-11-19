@@ -35,6 +35,44 @@ module.exports = {
         // 2. MANEJO DE BOTONES
         // --------------------------------------------------
         if (interaction.isButton()) {
+
+            // --- BOTÓN: ALTERNAR ENTRE FXTWITTER <-> VXTWITTER ---
+            if (interaction.customId === 'switch_embed_twitter') {
+                await interaction.deferUpdate();
+
+                try {
+                    const currentContent = interaction.message.content;
+                    const usingFx = currentContent.includes('fxtwitter.com');
+
+                    // Cambiamos el dominio en el mensaje
+                    const newContent = usingFx
+                        ? currentContent.replace('fxtwitter.com', 'vxtwitter.com')
+                        : currentContent.replace('vxtwitter.com', 'fxtwitter.com');
+
+                    // Reconstruimos los botones: solo cambiamos el nuestro y conservamos los demás
+                    const updatedComponents = interaction.message.components[0].components.map(button => {
+                        if (button.customId === 'switch_embed_twitter') {
+                            return new ButtonBuilder()
+                                .setCustomId('switch_embed_twitter')
+                                .setLabel(usingFx ? 'Usar fxtwitter' : 'Usar vxtwitter')
+                                .setStyle(usingFx ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                                .setEmoji('🔄');
+                        }
+                        return ButtonBuilder.from(button);
+                    });
+
+                    await interaction.editReply({
+                        content: newContent,
+                        components: [new ActionRowBuilder().addComponents(updatedComponents)]
+                    });
+
+                } catch (error) {
+                    console.error("Error al alternar el embed de Twitter:", error.message);
+                    await interaction.followUp({ content: "No pude cambiar el enlace.", flags: MessageFlags.Ephemeral });
+                }
+                return;
+            }
+
             // --- NUEVO TRADUCTOR BAJO DEMANDA PARA FXTWITTER ---
             if (interaction.customId.startsWith('translate_fx')) {
                 // DeferReply efímero para que la traducción sea privada y no ensucie el canal
@@ -43,7 +81,7 @@ module.exports = {
                 try {
                     // Recuperamos el enlace original que guardamos en el customId (ej: translate_fx|URL)
                     const [, originalLink] = interaction.customId.split('|');
-                    
+
                     // Hacemos la consulta a la API de fxtwitter solo si el usuario pidió traducir
                     const apiUrl = originalLink.replace(/(?:www\.)?(?:twitter|x)\.com/gi, 'api.fxtwitter.com').split('?')[0];
                     const res = await axios.get(apiUrl);
@@ -76,8 +114,8 @@ module.exports = {
                 }
                 return;
             }
-            
-           // --- NUEVO: BOTÓN DE DESCARGA ---
+
+            // --- NUEVO: BOTÓN DE DESCARGA ---
             if (interaction.customId === 'download_social_content') {
                 await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -85,7 +123,7 @@ module.exports = {
 
                 try {
                     const originalEmbed = interaction.message.embeds[0];
-                    const link = originalEmbed?.url || interaction.message.content.match(/https?:\/\/[^\s]+/)[0]; 
+                    const link = originalEmbed?.url || interaction.message.content.match(/https?:\/\/[^\s]+/)[0];
 
                     if (!link) {
                         return interaction.editReply("No pude encontrar el enlace original de esta publicación.");
@@ -93,8 +131,11 @@ module.exports = {
 
                     await interaction.editReply("📥 Extrayendo y descargando el archivo multimedia...");
 
-                    const result = await downloadAndPrepareSocialVideo(link);
+                    const cleanLink = link.replace(/(?:fx|vx)twitter\.com/gi, 'x.com');
+                    const result = await downloadAndPrepareSocialVideo(cleanLink);
                     
+
+
                     // 1. Enviamos a Discord (Esto lee el disco)
                     await interaction.editReply(result.payload);
 
@@ -154,9 +195,9 @@ module.exports = {
 
                     const updatedEmbed = EmbedBuilder.from(originalEmbed).setDescription(updatedText);
 
-                    
+
                     const currentComponents = interaction.message.components[0].components;
-                    
+
                     const updatedComponents = currentComponents.map(button => {
                         // Si es el botón del traductor, lo actualizamos
                         if (button.customId === 'translate_post' || button.customId === 'untranslate_post') {
@@ -165,7 +206,7 @@ module.exports = {
                                 .setLabel(newButtonLabel)
                                 .setStyle(newButtonStyle);
                         }
-                        
+
                         return ButtonBuilder.from(button);
                     });
 
